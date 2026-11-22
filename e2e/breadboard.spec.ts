@@ -31,6 +31,9 @@ async function probeWithKeyboard(page: Page, settings: BoardSettings, socket: st
 test('probes the divider with the keyboard and selects parts from the 3D board', async ({ page }) => {
   await openBoard(page)
   await expect(scene(page).locator('canvas')).toBeVisible()
+  // The results sheet starts closed on the board so it does not cover it; the launcher still opens it.
+  await expect(page.getByRole('region', { name: 'Simulation results' })).toHaveCount(0)
+  await expect(page.getByRole('navigation', { name: 'Panels' }).getByRole('button', { name: 'Results', exact: true })).toHaveAttribute('aria-pressed', 'false')
   await expect(probe(page)).toHaveText('Select a socket')
   const divider = boardGuides.find(guide => guide.example === 'Voltage Divider')!
   const r2 = divider.place(boardShape(defaultBoardSettings)).find(item => item.part === 'R2')!.sockets[0]

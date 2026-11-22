@@ -5,7 +5,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import App from './App'
 import { examples } from './circuit/examples'
 
-beforeEach(() => { localStorage.clear(); document.documentElement.lang = 'en' })
+/** Screen tiers follow the viewport width: phone < 640 px, tablet 640–1099 px, desktop from 1100 px. */
+const viewport = (width: number) => (window as unknown as { happyDOM: { setViewport: (size: { width: number; height: number }) => void } }).happyDOM.setViewport({ width, height: 800 })
+
+beforeEach(() => { localStorage.clear(); document.documentElement.lang = 'en'; viewport(1280) })
 afterEach(cleanup)
 
 describe('circuit workbench', () => {
@@ -127,7 +130,7 @@ describe('circuit workbench', () => {
     fireEvent.click(pin)
     expect(screen.getByRole('button', { name: 'Pin Library' }).getAttribute('aria-pressed')).toBe('false')
     expect(workbench().dataset.dockLeft).toBe('false')
-    expect(JSON.parse(localStorage.getItem('meshlab:panels')!).wide.library).toEqual({ open: true, pinned: false })
+    expect(JSON.parse(localStorage.getItem('meshlab:panels')!).desktop.schematic.library).toEqual({ open: true, pinned: false })
     unmount()
     render(<App />)
     expect(screen.getByRole('button', { name: 'Pin Library' }).getAttribute('aria-pressed')).toBe('false')
@@ -145,7 +148,7 @@ describe('circuit workbench', () => {
     expect(document.activeElement).toBe(launcher)
     fireEvent.click(launcher)
     expect(screen.getByRole('searchbox', { name: 'Find components' })).toBeTruthy()
-    expect(JSON.parse(localStorage.getItem('meshlab:panels')!).wide.library.open).toBe(true)
+    expect(JSON.parse(localStorage.getItem('meshlab:panels')!).desktop.schematic.library.open).toBe(true)
   })
 
   it('closes a floating panel with Escape only while focus is inside it', () => {
@@ -161,5 +164,61 @@ describe('circuit workbench', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Pin Results' }))
     fireEvent.keyDown(screen.getByRole('button', { name: 'Pin Results' }), { key: 'Escape' })
     expect(screen.getByRole('region', { name: 'Simulation results' })).toBeTruthy()
+  })
+
+  it('keeps a separate tablet layout with at most one pinned side panel and restores it after a remount', () => {
+    viewport(1024)
+    const { container, unmount } = render(<App />)
+    const workbench = () => container.querySelector<HTMLElement>('.workbench')!
+    expect(workbench().dataset.tier).toBe('tablet')
+    // Tablets start with only the floating sheets so the editor keeps its width.
+    expect(screen.queryByRole('region', { name: 'Components' })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Library' }))
+    expect(screen.getByRole('button', { name: 'Pin Library' }).getAttribute('aria-pressed')).toBe('false')
+    expect(workbench().dataset.dockLeft).toBe('false')
+    fireEvent.click(screen.getByRole('button', { name: 'Pin Library' }))
+    expect(workbench().dataset.dockLeft).toBe('true')
+    fireEvent.click(screen.getByRole('button', { name: 'Inspector' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Pin Inspector' }))
+    expect(workbench().dataset.dockRight).toBe('true')
+    expect(workbench().dataset.dockLeft).toBe('false')
+    expect(screen.getByRole('button', { name: 'Pin Library' }).getAttribute('aria-pressed')).toBe('false')
+    const saved = JSON.parse(localStorage.getItem('meshlab:panels')!)
+    expect(saved.tablet.schematic.inspector).toEqual({ open: true, pinned: true })
+    expect(saved.tablet.schematic.library).toEqual({ open: true, pinned: false })
+    expect(saved.desktop.schematic.library).toEqual({ open: true, pinned: true })
+    unmount()
+    render(<App />)
+    expect(screen.getByRole('button', { name: 'Pin Inspector' }).getAttribute('aria-pressed')).toBe('true')
+    expect(document.querySelector<HTMLElement>('.workbench')!.dataset.dockRight).toBe('true')
+  })
+
+  it('migrates the earlier wide and compact layouts and falls back to defaults for invalid saved state', () => {
+    localStorage.setItem('meshlab:panels', JSON.stringify({ wide: { library: { open: false, pinned: true }, inspector: 'broken' }, compact: null }))
+    const { unmount } = render(<App />)
+    expect(screen.queryByRole('region', { name: 'Components' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Library' }).getAttribute('aria-pressed')).toBe('false')
+    expect(screen.getByRole('button', { name: 'Pin Inspector' }).getAttribute('aria-pressed')).toBe('true')
+    unmount()
+    localStorage.setItem('meshlab:panels', '{not json')
+    render(<App />)
+    expect(screen.getByRole('button', { name: 'Pin Library' }).getAttribute('aria-pressed')).toBe('true')
+  })
+
+  it('opens the More actions menu on narrow screens with file, theme, and language controls, and closes it with Escape', async () => {
+    viewport(390)
+    render(<App />)
+    expect(screen.queryByRole('combobox', { name: 'Circuit examples' })).toBeNull()
+    const more = screen.getByRole('button', { name: 'More actions' })
+    await act(async () => { fireEvent.click(more) })
+    const menu = await screen.findByRole('dialog', { name: 'More actions' })
+    for (const name of ['New', 'Import', 'JSON', 'PNG']) expect(within(menu).getByRole('button', { name })).toBeTruthy()
+    expect(within(menu).getByRole('combobox', { name: 'Circuit examples' })).toBeTruthy()
+    expect(within(menu).getByRole('combobox', { name: 'Language' })).toBeTruthy()
+    const themes = within(within(menu).getByRole('group', { name: 'Theme' }))
+    fireEvent.click(themes.getByRole('button', { name: 'Dark theme' }))
+    expect(document.documentElement.classList.contains('dark')).toBe(true)
+    await act(async () => { fireEvent.keyDown(themes.getByRole('button', { name: 'Light theme' }), { key: 'Escape' }) })
+    await vi.waitFor(() => expect(screen.queryByRole('dialog', { name: 'More actions' })).toBeNull())
   })
 })

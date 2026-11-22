@@ -39,7 +39,17 @@ The schematic or the 3D breadboard fills the screen. Everything else opens as a 
 | Float or dock | Use the pin button. Pinned panels make room in the editor; floating panels sit on top with a shadow. |
 | Keyboard | **Esc** closes a floating panel when focus is inside it. |
 
-Panel layout is remembered separately for wide and narrow screens. On phones, panels open as bottom sheets.
+Panel layout is remembered separately for each view and screen size:
+
+| Screen | Layout |
+|--------|--------|
+| Desktop (1100 px and wider) | Panels can float or dock. The breadboard view starts with **Results** closed so the board stays visible. |
+| Tablet (640–1099 px) | Panels float by default. You can dock one side panel at a time. |
+| Phone (under 640 px) | Panels open as bottom sheets, one at a time. |
+
+On tablets and phones, **More actions** (**⋯**) in the top bar holds the examples, **New**, **Import**, **JSON**, **PNG**, the theme, and the language. When the editor is narrow, **More tools** (**⋮**) in the schematic toolbar holds copy, paste, duplicate, and zoom.
+
+Loading an example or a file fits the circuit to the free area of the editor. The 3D board also centers itself in the area that panels leave free.
 
 ## Breadboard view
 

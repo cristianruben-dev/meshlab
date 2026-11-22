@@ -15,6 +15,10 @@ import { TERMINAL_ROWS, type Placement } from './model'
 /** World units per drawing unit; the board's top face sits at y = 0 and drawing y maps to world z. */
 const S = 0.1
 const HOME = new THREE.Vector3(0, 56, 50).normalize()
+/** Screen pixels kept clear below the board for the probe readout and camera controls. */
+const OVERLAY_ROOM = 60
+
+export type Insets = { top: number; right: number; bottom: number; left: number }
 
 export type Board3DProps = {
   t: Translate
@@ -27,6 +31,8 @@ export type Board3DProps = {
   selected: string[]
   strip: string[]
   probe: string
+  /** Screen pixels covered by floating chrome; the board is centred and fitted in the remaining area. */
+  insets?: Insets
   onSocket: (id: string) => void
   onPart: (id: string) => void
   onUnavailable: () => void
@@ -208,7 +214,7 @@ const CURSOR_KEYS = new Set(['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'])
 
 export default function Board3D(props: Board3DProps) {
   const host = useRef<HTMLDivElement>(null)
-  const api = useRef<{ rebuild: (p: Scene) => void; orbit: (angle: number) => void; reset: () => void } | null>(null)
+  const api = useRef<{ rebuild: (p: Scene) => void; orbit: (angle: number) => void; reset: () => void; resize: () => void } | null>(null)
   const [ready, setReady] = useState(false)
   const [cursor, setCursor] = useState<string>()
   const [keyboard, setKeyboard] = useState(false)
@@ -262,11 +268,24 @@ export default function Board3D(props: Board3DProps) {
         if (node instanceof CSS2DObject) node.element.remove()
       })
     }
-    /** Camera distance that fits the whole board, with room for the overlays, in the current viewport. */
+    /**
+     * Camera distance that fits the whole board in the part of the viewport left free by floating chrome and the
+     * board overlays. A view offset moves the projection centre to the middle of that area, so orbiting still turns
+     * around the board while it stays clear of the panels.
+     */
     function fit() {
       const { width, height } = latest.current.geometry
+      const viewWidth = element!.clientWidth, viewHeight = element!.clientHeight
+      const inset = latest.current.insets ?? { top: 0, right: 0, bottom: 0, left: 0 }
+      const bottom = inset.bottom + OVERLAY_ROOM
+      const freeWidth = viewWidth - inset.left - inset.right, freeHeight = viewHeight - inset.top - bottom
+      // Too little room left: frame the whole viewport instead.
+      const framed = viewWidth > 0 && viewHeight > 0 && freeWidth > viewWidth * .3 && freeHeight > viewHeight * .3
+      const fw = framed ? freeWidth / viewWidth : 1, fh = framed ? freeHeight / viewHeight : 1
+      if (framed) camera.setViewOffset(viewWidth, viewHeight, (inset.right - inset.left) / 2, (bottom - inset.top) / 2, viewWidth, viewHeight)
+      else camera.clearViewOffset()
       const tanV = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)), tanH = tanV * camera.aspect
-      fitDistance = Math.max(width * S / 2 * 1.12 / tanH, height * S / 2 * .95 / tanV) * 1.08
+      fitDistance = Math.max(width * S / 2 * 1.14 / (tanH * fw), height * S / 2 * .95 / (tanV * fh)) * 1.1
       controls.minDistance = fitDistance * .3; controls.maxDistance = fitDistance * 2.6
       camera.far = fitDistance * 8; camera.updateProjectionMatrix()
     }
@@ -368,6 +387,7 @@ export default function Board3D(props: Board3DProps) {
         camera.position.copy(controls.target).add(offset); dirty = true
       },
       reset,
+      resize,
     }
     setReady(true)
     return () => {
@@ -381,6 +401,9 @@ export default function Board3D(props: Board3DProps) {
   }, [])
 
   useEffect(() => { api.current?.rebuild(latest.current) })
+  const { top = 0, right = 0, bottom = 0, left = 0 } = props.insets ?? {}
+  // Panels opening or closing change the free area; refit the camera to it.
+  useEffect(() => { api.current?.resize() }, [top, right, bottom, left])
 
   const active = cursor && geometry.hole(cursor) ? cursor : props.probe && geometry.hole(props.probe) ? props.probe : `${TERMINAL_ROWS[0]}1`
   function onKeyDown(event: KeyboardEvent<HTMLDivElement>) {

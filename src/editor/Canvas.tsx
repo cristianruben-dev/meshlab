@@ -37,9 +37,10 @@ export type CanvasProps = {
   box: { start: Point; end: Point } | null
   onMove: (event: ReactPointerEvent) => void
   onUp: (event: ReactPointerEvent) => void
-  /** Screen pixels covered by floating chrome at the top and bottom; the drawing is centred in the remaining area. */
-  inset?: { top: number; bottom: number }
+  /** Screen pixels covered by floating chrome along each edge; the drawing is centred in the remaining area. */
+  inset?: Inset
 }
+type Inset = { top: number; bottom: number; left?: number; right?: number }
 type Frame = { x: number; y: number; width: number; height: number }
 const DRAWING = { width: 800, height: 540 }
 const MAX_SCALE = 1.25
@@ -49,12 +50,14 @@ const MAX_SCALE = 1.25
  * screen while keeping the drawing centre (400, 270) in the middle of the uncovered area. Pointer math uses
  * getScreenCTM, so it stays correct for any frame.
  */
-export function frameFor(size: { width: number; height: number } | null, inset = { top: 0, bottom: 0 }): Frame {
+export function frameFor(size: { width: number; height: number } | null, inset: Inset = { top: 0, bottom: 0 }): Frame {
   if (!size || size.width <= 0 || size.height <= 0) return { x: 0, y: 0, ...DRAWING }
+  const left = inset.left ?? 0, right = inset.right ?? 0
+  const usableWidth = Math.max(1, size.width - left - right)
   const usable = Math.max(1, size.height - inset.top - inset.bottom)
-  const scale = Math.min(size.width / DRAWING.width, usable / DRAWING.height, MAX_SCALE)
+  const scale = Math.min(usableWidth / DRAWING.width, usable / DRAWING.height, MAX_SCALE)
   const width = size.width / scale, height = size.height / scale
-  return { x: DRAWING.width / 2 - width / 2, y: DRAWING.height / 2 - (inset.top + usable / 2) / scale, width, height }
+  return { x: DRAWING.width / 2 - (left + usableWidth / 2) / scale, y: DRAWING.height / 2 - (inset.top + usable / 2) / scale, width, height }
 }
 
 function useSize(svg: RefObject<SVGSVGElement | null>) {

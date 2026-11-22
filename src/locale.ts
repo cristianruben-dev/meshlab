@@ -193,6 +193,11 @@ const spanish: Record<string, string> = {
   "Close Results": "Cerrar resultados",
   "Pin Oscilloscope": "Fijar osciloscopio",
   "Close Oscilloscope": "Cerrar osciloscopio",
+  "More actions": "Más acciones",
+  "More tools": "Más herramientas",
+  "Circuit file": "Archivo del circuito",
+  "Appearance": "Apariencia",
+  "Canvas overlays": "Capas del lienzo",
 }
 
 export function readLanguage(): Language {

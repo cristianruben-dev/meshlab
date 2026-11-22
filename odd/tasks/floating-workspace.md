@@ -15,6 +15,7 @@ S7. Preserve EN/ES, light/dark themes, keyboard access, solver, editing, JSON/PN
 - T1 · S1–S3, S7 · delegated (parallel unit A) · breadboard: remove guided build and 2D view, size presets and settings, adaptive layouts, 3D keyboard cursor · done · d230ccb · RED 25+4 failing → GREEN 34
 - T2 · S4–S7 · delegated (parallel unit B) · workspace shell: full-screen editor, floating/pinnable drawers and sheets, shadows, responsive behavior · done · d230ccb · RED 3 failing → GREEN
 - T3 · S1–S7 · inline · integration, translations, captures, full checks, README · done
+- T4 · S4–S7 · delegated (context backstop) · premium polish: spacing, alignment, sheets, launcher, mobile menu, tablet, board framing · done
 
 Route evidence: T1 and T2 are independent units with disjoint edit surfaces, each several hundred lines; the user asked to "abrir hasta las sesiones que necesitemos". Parent owns git, `src/locale.ts`, and integration.
 
@@ -23,4 +24,9 @@ L1. (2026-11-22) User request, verbatim: "Vamos a hacer algunos cambios ahorita 
 L2. Prep: browser tests for the breadboard moved to `e2e/breadboard.spec.ts` (unit A owns it); the App-level WebGL test was removed (unit A replaces it with board-level tests). Unit B owns `e2e/workbench.spec.ts` and `src/App.test.tsx`.
 L3. Integration (seam check): tsc clean; npm test 76/76; npm run build OK; npm run test:e2e 16/16. Captures 05-unitA-*, 05-unitB-*, 06-integrated-* (light/dark × desktop/mobile): no page overflow, no page errors. Single commit d230ccb because the units share the Board/App contract and would not compile apart.
 L4. Open polish items: floating Results sheet covers the lower board by default in breadboard view; narrow top bar scrolls sideways; narrow breakpoint is 899px (unit B, to keep pinned panels from squeezing the editor); collapsible.tsx unused.
+
+L5. (2026-11-22) User request, verbatim: "pues de una vez pule lo que te falta y vamos a chqcar todo lo de padding margenes laineaciones y todo para que se vea en verdad premium porfvoar, apoyame a ahcer todo eso"
+L6. T4 opened (S4–S7 polish): one delegated writer (context backstop): shared 12px gutter grid for pinned and floating surfaces, aligned bottom sheets, launcher placement, readable floating oscilloscope, mobile "More" menu, tablet breakpoint, board framing that respects panel insets and results default in breadboard view, spacing/alignment audit, remove unused collapsible.tsx.
+L7. T4 result: 12px gutter / 8px gap / radii 16-10-8 grid; pinned cards and floating sheets aligned (desktop measurements: top bar y 12-64, pinned cards y 72-888, sheets y 508-848, 48px headers); launcher at top-left of the free area; measured-width oscilloscope; phone "More actions" menu and "More tools" overflow; tiers phone <640 / tablet 640-1099 / desktop; board camera fits the uncovered area and Results starts closed in breadboard view; fit-to-circuit on load; collapsible.tsx removed. Writer tests were added after the code (no RED evidence).
+L8. Risk: item 1 (persisted `meshlab:panels` format changed). Independent verifier: PASS for legacy migration, malformed values, and round-trip; it noted tablets could restore two docked side panels from stored data. Fixed in `readPanels` with RED→GREEN test `src/workspace/panels.test.ts`. Automated contrast audit (nearest opaque background) found no text under 4.5:1 in light or dark. Checks: tsc clean, npm test 81/81, e2e 17/17, build OK (large-chunk warning on the lazy Board chunk).
 

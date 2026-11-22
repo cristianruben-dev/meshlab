@@ -4,33 +4,48 @@ export type PanelId = 'library' | 'inspector' | 'display' | 'results' | 'scope' 
 export type PanelSide = 'left' | 'right' | 'bottom'
 export type PanelState = { open: boolean; pinned: boolean }
 export type PanelLayout = Record<PanelId, PanelState>
-type Stored = { wide: PanelLayout; compact: PanelLayout }
+/** Phone (< 640 px): bottom sheets. Tablet (640–1099 px): floating panels, one docked side panel. Desktop: everything docks. */
+export type Tier = 'phone' | 'tablet' | 'desktop'
+export type View = 'schematic' | 'board'
+type Layouts = Record<View, PanelLayout>
+export type Stored = Record<Tier, Layouts>
 
 export const panelSides: Record<PanelId, PanelSide> = {
   library: 'left', inspector: 'right', display: 'right', board: 'right', results: 'bottom', scope: 'bottom',
 }
 export const panelIds = Object.keys(panelSides) as PanelId[]
 export const panelsKey = 'meshlab:panels'
-// Phones and portrait tablets: too narrow to dock panels beside the editor, so every panel is a bottom sheet.
-const compactQuery = '(max-width: 899px)'
+export const tiers: Tier[] = ['phone', 'tablet', 'desktop']
+const views: View[] = ['schematic', 'board']
+const phoneQuery = '(max-width: 639px)'
+const tabletQuery = '(min-width: 640px) and (max-width: 1099px)'
+/** A tablet docks a side panel only while the editor keeps at least 420 px beside it. */
+const sideDockQuery = '(min-width: 728px)'
 
 const closed: PanelState = { open: false, pinned: false }
-const defaults: Stored = {
-  wide: {
-    library: { open: true, pinned: true },
-    inspector: { open: true, pinned: true },
-    display: closed,
-    results: { open: true, pinned: false },
-    scope: { open: true, pinned: false },
-    board: { open: true, pinned: true },
+const open = (pinned: boolean): PanelState => ({ open: true, pinned })
+const layout = (entries: Partial<PanelLayout>): PanelLayout => ({ library: closed, inspector: closed, display: closed, results: closed, scope: closed, board: closed, ...entries })
+
+// Breadboard view starts without the results sheet so the board is not covered, and tablets start with only the
+// bottom sheets so the editor keeps its width; everything else opens from the launcher.
+export const defaultLayouts: Stored = {
+  desktop: {
+    schematic: layout({ library: open(true), inspector: open(true), results: open(false), scope: open(false) }),
+    board: layout({ inspector: open(true), board: open(true) }),
   },
-  compact: { library: closed, inspector: closed, display: closed, results: closed, scope: closed, board: closed },
+  tablet: {
+    schematic: layout({ results: open(false), scope: open(false) }),
+    board: layout({ board: open(false) }),
+  },
+  phone: { schematic: layout({}), board: layout({}) },
 }
 
+const record = (value: unknown) => value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : undefined
+
 function clean(saved: unknown, fallback: PanelLayout): PanelLayout {
-  const source = saved && typeof saved === 'object' ? saved as Record<string, unknown> : {}
+  const source = record(saved) ?? {}
   return Object.fromEntries(panelIds.map(id => {
-    const entry = source[id] as Partial<PanelState> | undefined
+    const entry = record(source[id]) as Partial<PanelState> | undefined
     return [id, {
       open: typeof entry?.open === 'boolean' ? entry.open : fallback[id].open,
       pinned: typeof entry?.pinned === 'boolean' ? entry.pinned : fallback[id].pinned,
@@ -38,46 +53,80 @@ function clean(saved: unknown, fallback: PanelLayout): PanelLayout {
   })) as PanelLayout
 }
 
+/**
+ * Reads the saved layouts. The earlier two-tier format (`wide` and `compact`, one layout for both views) migrates to
+ * the desktop and phone schematic layouts; anything missing or malformed falls back to the defaults.
+ */
 export function readPanels(): Stored {
-  try {
-    const saved = JSON.parse(localStorage.getItem(panelsKey) ?? 'null') as Partial<Stored> | null
-    return { wide: clean(saved?.wide, defaults.wide), compact: clean(saved?.compact, defaults.compact) }
-  } catch { return defaults }
+  let saved: Record<string, unknown> | undefined
+  try { saved = record(JSON.parse(localStorage.getItem(panelsKey) ?? 'null')) } catch { saved = undefined }
+  const legacy: Partial<Record<Tier, unknown>> = { desktop: saved?.wide, phone: saved?.compact }
+  return Object.fromEntries(tiers.map(tier => {
+    const current = record(saved?.[tier])
+    return [tier, Object.fromEntries(views.map(view => {
+      const layout = clean(current?.[view] ?? (view === 'schematic' ? legacy[tier] : undefined), defaultLayouts[tier][view])
+      return [view, tier === 'tablet' ? oneDockedSide(layout) : layout]
+    }))]
+  })) as Stored
 }
 
-function matchesCompact() {
-  return typeof matchMedia === 'function' && matchMedia(compactQuery).matches
+/** Tablets dock at most one side panel; extra pins in stored data are dropped, keeping the first. */
+function oneDockedSide(layout: PanelLayout): PanelLayout {
+  let docked = false
+  return Object.fromEntries(panelIds.map(id => {
+    if (panelSides[id] === 'bottom' || !layout[id].pinned) return [id, layout[id]]
+    const keep = !docked
+    docked = true
+    return [id, keep ? layout[id] : { ...layout[id], pinned: false }]
+  })) as PanelLayout
 }
 
-/** Open and pinned state of every workspace panel, remembered separately for wide and compact (phone) layouts. */
-export function usePanels() {
+function matches(query: string) {
+  return typeof matchMedia === 'function' && matchMedia(query).matches
+}
+function currentTier(): Tier {
+  return matches(phoneQuery) ? 'phone' : matches(tabletQuery) ? 'tablet' : 'desktop'
+}
+
+/** Open and pinned state of every workspace panel, remembered separately per screen tier and per editor view. */
+export function usePanels(view: View) {
   const [stored, setStored] = useState<Stored>(readPanels)
-  const [compact, setCompact] = useState(matchesCompact)
+  const [tier, setTier] = useState<Tier>(currentTier)
+  const [sideRoom, setSideRoom] = useState(() => matches(sideDockQuery))
   useEffect(() => {
     if (typeof matchMedia !== 'function') return
-    const media = matchMedia(compactQuery)
-    const change = () => setCompact(media.matches)
-    media.addEventListener?.('change', change)
-    return () => media.removeEventListener?.('change', change)
+    const queries = [phoneQuery, tabletQuery, sideDockQuery].map(query => matchMedia(query))
+    const change = () => { setTier(currentTier()); setSideRoom(matches(sideDockQuery)) }
+    for (const media of queries) media.addEventListener?.('change', change)
+    return () => { for (const media of queries) media.removeEventListener?.('change', change) }
   }, [])
   useEffect(() => {
     try { localStorage.setItem(panelsKey, JSON.stringify(stored)) } catch { /* Storage is optional. */ }
   }, [stored])
-  const layout = compact ? stored.compact : stored.wide
+  const compact = tier === 'phone'
+  const current = stored[tier][view]
+  /** Whether a panel may dock: never on phones, and on tablets only while the editor keeps its room. */
+  const canPin = (id: PanelId) => tier === 'desktop' || (tier === 'tablet' && (panelSides[id] === 'bottom' || sideRoom))
   function patch(id: PanelId, changes: Partial<PanelState>) {
-    const key = compact ? 'compact' : 'wide'
     setStored(previous => {
-      const current = previous[key]
+      const before = previous[tier][view]
+      let base = before
       // Phone sheets share the bottom of the screen, so opening one closes the others.
-      const base = compact && changes.open ? Object.fromEntries(panelIds.map(other => [other, { ...current[other], open: false }])) as PanelLayout : current
-      return { ...previous, [key]: { ...base, [id]: { ...current[id], ...changes } } }
+      if (compact && changes.open) base = Object.fromEntries(panelIds.map(other => [other, { ...before[other], open: false }])) as PanelLayout
+      // A tablet keeps at most one docked side panel so the editor stays usable.
+      if (tier === 'tablet' && changes.pinned && panelSides[id] !== 'bottom')
+        base = Object.fromEntries(panelIds.map(other => [other, panelSides[other] === 'bottom' ? base[other] : { ...base[other], pinned: false }])) as PanelLayout
+      return { ...previous, [tier]: { ...previous[tier], [view]: { ...base, [id]: { ...before[id], ...changes } } } }
     })
   }
   return {
+    tier,
     compact,
-    layout,
+    layout: current,
+    canPin,
+    docked: (id: PanelId) => canPin(id) && current[id].pinned,
     setOpen: (id: PanelId, open: boolean) => patch(id, { open }),
-    toggle: (id: PanelId) => patch(id, { open: !layout[id].open }),
+    toggle: (id: PanelId) => patch(id, { open: !current[id].open }),
     setPinned: (id: PanelId, pinned: boolean) => patch(id, { pinned }),
   }
 }

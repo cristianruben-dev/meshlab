@@ -26,8 +26,8 @@ export type PanelProps = {
   title: string
   icon: ReactNode
   pinned: boolean
-  /** Phone layout: panels are bottom sheets and cannot be pinned. */
-  compact: boolean
+  /** Whether the panel may dock here: phones use bottom sheets, and small tablets keep side panels floating. */
+  pinnable: boolean
   pinLabel: string
   closeLabel: string
   pinTip: string
@@ -44,8 +44,8 @@ export type PanelProps = {
  * the editor makes room for them. Escape closes a floating panel only while focus is inside it, and focus returns to
  * its launcher button. The panel is non-modal, so focus is never trapped.
  */
-export function Panel({ id, side, title, icon, pinned, compact, pinLabel, closeLabel, pinTip, unpinTip, onPin, onClose, meta, className, children }: PanelProps) {
-  const docked = pinned && !compact
+export function Panel({ id, side, title, icon, pinned, pinnable, pinLabel, closeLabel, pinTip, unpinTip, onPin, onClose, meta, className, children }: PanelProps) {
+  const docked = pinned && pinnable
   const element = useRef<HTMLElement>(null)
   function close() {
     document.getElementById(launcherId(id))?.focus()
@@ -72,7 +72,7 @@ export function Panel({ id, side, title, icon, pinned, compact, pinLabel, closeL
       <h2 id={`panel-${id}-title`}>{title}</h2>
       {meta}
       <div className="panel-actions">
-        {!compact && <IconTool label={pinLabel} tip={pinned ? unpinTip : pinTip} pressed={pinned} onClick={() => onPin(!pinned)}><Pin /></IconTool>}
+        {pinnable && <IconTool label={pinLabel} tip={pinned ? unpinTip : pinTip} pressed={pinned} className="panel-pin" onClick={() => onPin(!pinned)}><Pin /></IconTool>}
         <IconTool label={closeLabel} onClick={close}><X /></IconTool>
       </div>
     </header>

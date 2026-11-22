@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useState, type CSSProperties } from 'react'
 import { ArrowRight, CircuitBoard, Crosshair, Zap } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import type { Circuit, Component } from '../circuit/model'
@@ -8,7 +8,7 @@ import type { Theme } from '../theme'
 import { boardGuides, boardShape, holeGroup, probeNode, type Guide } from './model'
 import { boardGeometry } from './geometry'
 import type { BoardSettings } from './settings'
-import Board3D from './Board3D'
+import Board3D, { type Insets } from './Board3D'
 import './board.css'
 
 export type BoardProps = {
@@ -24,6 +24,8 @@ export type BoardProps = {
   onSelect: (ids: string[]) => void
   onToggle: (part: Component) => void
   onLoad: (name: string) => void
+  /** Screen pixels covered by floating chrome along each edge; the camera and overlays stay in the free area. */
+  insets?: Insets
 }
 
 function webgl() {
@@ -34,7 +36,9 @@ function webgl() {
 }
 
 /** Full-size 3D breadboard with the assembled reference layout of a supported example and a voltage probe. */
-export default function Board({ t, theme, guide, settings, circuit, pins, readings, currents, selected, onSelect, onToggle, onLoad }: BoardProps) {
+const none: Insets = { top: 0, right: 0, bottom: 0, left: 0 }
+
+export default function Board({ t, theme, guide, settings, circuit, pins, readings, currents, selected, onSelect, onToggle, onLoad, insets = none }: BoardProps) {
   const [available, setAvailable] = useState(webgl)
   const shape = boardShape(settings)
   const shapeKey = `${guide?.example}:${shape.columns}:${shape.railLength}:${shape.split}`
@@ -56,10 +60,12 @@ export default function Board({ t, theme, guide, settings, circuit, pins, readin
     setProbed({ key: shapeKey, socket })
   }
 
-  return <div className="board" data-size={settings.size}>
+  const free = { '--inset-top': `${insets.top}px`, '--inset-right': `${insets.right}px`, '--inset-bottom': `${insets.bottom}px`, '--inset-left': `${insets.left}px` } as CSSProperties
+
+  return <div className="board" data-size={settings.size} style={free}>
     {available
       ? <Board3D t={t} theme={theme} geometry={geometry} labels={settings.labels} placements={placements} parts={parts} currents={currents}
-          selected={selected} strip={strip} probe={probe} onSocket={inspect} onPart={id => onSelect([id])} onUnavailable={() => setAvailable(false)} />
+          selected={selected} strip={strip} probe={probe} insets={insets} onSocket={inspect} onPart={id => onSelect([id])} onUnavailable={() => setAvailable(false)} />
       : <p className="board-message" role="status">{t('The 3D breadboard needs WebGL, which is not available in this browser.')}</p>}
     {guide && available && <div className="board-overlay board-overlay-start">
       <div className="board-probe">
