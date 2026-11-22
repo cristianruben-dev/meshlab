@@ -274,7 +274,7 @@ export default function Board3D(props: Board3DProps) {
     function resize() {
       const width = element!.clientWidth
       if (!width) return
-      const height = Math.round(Math.min(Math.max(width * .54, 300), 600))
+      const height = Math.round(Math.min(Math.max(width * (width < 640 ? .78 : .54), 280), 600))
       renderer.setSize(width, height); labels.setSize(width, height)
       camera.aspect = width / height
       // Fit the board width (plus margin) inside the horizontal field of view.

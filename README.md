@@ -25,11 +25,25 @@ For browser tests, install Chromium once with `npx playwright install chromium`,
 
 In the inspector, use **Electrical limits** to set a rated current or absorbed power. Set a limit to zero to disable it. LEDs default to 20 mA. Use **Locate** in an alert to bring the affected part or node into view.
 
+## Themes
+
+Use the theme control in the top bar to choose **System**, **Light**, or **Dark**. The app follows the operating system until you pick Light or Dark, then remembers that choice in this browser. Exported PNG images use the colors of the active theme.
+
 ## Breadboard view
 
 Choose **Breadboard** on the canvas, then open **Voltage Divider** or **LED + Switch**. In **Assembled**, select a socket to highlight its conductive strip and read its voltage to ground. In **Guided build**, choose the numbered sockets and check each step; the virtual probe becomes available when the physical connections match the schematic.
 
 The 2D model has 20 columns, two separate five-socket strips per column, and four independent continuous power rails. Some real boards have split rails; [check your hardware for continuity](https://learn.sparkfun.com/tutorials/how-to-use-a-breadboard/) before using the reference layout. Breadboard placement is session-local; JSON and PNG still describe the schematic. Unsupported circuit topologies offer the two guided examples instead of an automatic layout.
+
+### Optional 3D view
+
+Choose **3D** on the breadboard to see the same layout as a 3D model. Drag to orbit and scroll to zoom, or use the orbit and reset buttons. Click a socket to probe it or a part to select it; guided steps work the same way.
+
+| Topic | Behavior |
+|-------|----------|
+| Default | The 2D board stays the default view and the keyboard-accessible one (arrow keys move between sockets). |
+| Loading | The 3D renderer (three.js) loads only when you open the 3D view. |
+| Fallback | Without WebGL, the app shows a notice and keeps the 2D board. |
 
 ## Simulation model
 
@@ -37,4 +51,4 @@ The schematic graph compiles to a two-terminal branch netlist. The UI-independen
 
 The simulator handles DC operating points with up to 200 branches. A potentiometer acts as a two-terminal rheostat, a bulb uses a resistive load with a visual power indicator, and diodes and LEDs use a piecewise-linear approximation. Fuses are evaluated per operating point rather than latched over time. Adding a capacitor enables backward Euler transient analysis at a fixed 20 ms time step. Open **RC Charging** to see a 1 s time constant and use the oscilloscope to probe a component’s terminal voltage. Reset returns capacitor voltages to 0 V. The model does not include inductors or AC sources.
 
-The app uses React and Vite with [shadcn/ui's Base UI components](https://ui.shadcn.com/docs/installation/vite) for controls, and a native SVG schematic.
+The app uses React and Vite with [shadcn/ui's Base UI components](https://ui.shadcn.com/docs/installation/vite) for controls, a native SVG schematic, and three.js for the optional 3D breadboard.
