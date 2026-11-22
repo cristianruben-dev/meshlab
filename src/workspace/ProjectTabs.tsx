@@ -4,19 +4,20 @@ import {
   Check,
   CircleAlert,
   CircleCheck,
+  CircuitBoard,
   Folder as FolderIcon,
-  FolderOpen,
   Loader2,
   Pencil,
   Plus,
   SlidersHorizontal,
+  Waypoints,
   X,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import type { Translate } from '../locale'
-import type { Folder, Project, Tag } from '../storage/types'
+import type { Folder, PreferredView, Project, Tag } from '../storage/types'
 
 export type SaveState = 'saved' | 'saving' | 'error' | 'memory'
 
@@ -32,7 +33,7 @@ type ProjectTabsProps = {
   onSelectTab: (projectId: string) => void
   onCloseTab: (projectId: string) => void
   onOpenProject: (projectId: string) => void
-  onQuickCreateBlank: () => void
+  onQuickCreateBlank: (view?: PreferredView) => void
   onOpenNewProjectModal: () => void
   onRenameActive: (name: string) => Promise<void>
   onEditActiveDetails: () => void
@@ -152,6 +153,9 @@ export function ProjectTabs({
                     aria-hidden="true"
                   />
                 )}
+                <span className="tab-type-icon" aria-hidden="true">
+                  {project.preferredView === 'board' ? <CircuitBoard size={12} /> : <Waypoints size={12} />}
+                </span>
                 <span className="project-tab-name">{project.name}</span>
               </button>
               <button
@@ -189,20 +193,30 @@ export function ProjectTabs({
                 className="action-menu-item"
                 onClick={() => {
                   setSwitcherOpen(false)
-                  onQuickCreateBlank()
+                  onOpenNewProjectModal()
                 }}
               >
-                <Plus size={13} /> {t('New blank project')}
+                <Plus size={13} /> {t('New project')}…
               </button>
               <button
                 type="button"
                 className="action-menu-item"
                 onClick={() => {
                   setSwitcherOpen(false)
-                  onOpenNewProjectModal()
+                  onQuickCreateBlank('schematic')
                 }}
               >
-                <FolderOpen size={13} /> {t('New project')}…
+                <Waypoints size={13} /> {t('New blank circuit')}
+              </button>
+              <button
+                type="button"
+                className="action-menu-item"
+                onClick={() => {
+                  setSwitcherOpen(false)
+                  onQuickCreateBlank('board')
+                }}
+              >
+                <CircuitBoard size={13} /> {t('New blank breadboard')}
               </button>
             </div>
 

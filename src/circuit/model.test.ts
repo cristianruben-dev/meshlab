@@ -121,6 +121,63 @@ describe('circuit topology', () => {
     expect(twoSources.branches.R3.voltage).toBeCloseTo(6)
     expect(led.branches.D1.current).toBeCloseTo(3 / 331, 7)
   })
+
+  it('validates optional breadboard layouts while remaining backward compatible with v1 circuits', () => {
+    const base = circuit(
+      [component('V1', 'voltage'), component('R1', 'resistor'), component('GND', 'ground')],
+      [],
+    )
+    const legacy = validateCircuit(JSON.parse(JSON.stringify(base)))
+    expect(legacy).toEqual(base)
+    expect('breadboard' in legacy).toBe(false)
+
+    const withBoard: Circuit = {
+      ...base,
+      breadboard: {
+        placements: [
+          { id: 'p1', componentId: 'V1', sockets: ['T+1', 'B-1'] },
+          { id: 'p2', componentId: 'R1', sockets: ['C5', 'C10'] },
+          { id: 'p3', componentId: 'GND', sockets: ['B-3'] },
+        ],
+        jumpers: [
+          { id: 'j1', from: 'T+2', to: 'A5', color: '#e5484d' },
+          { id: 'j2', from: 'A10', to: 'B-5', color: '#3b82f6' },
+        ],
+      },
+    }
+    expect(validateCircuit(JSON.parse(JSON.stringify(withBoard)))).toEqual(withBoard)
+
+    expect(() => validateCircuit({
+      ...base,
+      breadboard: { placements: [{ id: 'p1', componentId: 'MISSING', sockets: ['A1', 'A2'] }], jumpers: [] },
+    })).toThrow(/unknown breadboard component/i)
+    expect(() => validateCircuit({
+      ...base,
+      breadboard: { placements: [{ id: 'p1', componentId: 'GND', sockets: ['A1', 'A2'] }], jumpers: [] },
+    })).toThrow(/1 socket/i)
+    expect(() => validateCircuit({
+      ...base,
+      breadboard: { placements: [{ id: 'p1', componentId: 'R1', sockets: ['A1'] }], jumpers: [] },
+    })).toThrow(/2 sockets/i)
+    expect(() => validateCircuit({
+      ...base,
+      breadboard: { placements: [{ id: 'p1', componentId: 'R1', sockets: ['Z99', 'A2'] }], jumpers: [] },
+    })).toThrow(/invalid breadboard socket/i)
+    expect(() => validateCircuit({
+      ...base,
+      breadboard: {
+        placements: [{ id: 'p1', componentId: 'R1', sockets: ['A1', 'A2'] }],
+        jumpers: [{ id: 'j1', from: 'A1', to: 'B3', color: '#e5484d' }],
+      },
+    })).toThrow(/duplicate breadboard socket/i)
+    expect(() => validateCircuit({
+      ...base,
+      breadboard: {
+        placements: [],
+        jumpers: [{ id: 'j1', from: 'A1', to: 'B3', color: '   ' }],
+      },
+    })).toThrow(/color/i)
+  })
 })
 
 it('charges and discharges the RC example through the public compiler', () => {

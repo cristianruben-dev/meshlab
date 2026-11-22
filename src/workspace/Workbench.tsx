@@ -1,11 +1,17 @@
-import { lazy, Suspense, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { lazy, Suspense, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import {
   Activity,
   AudioWaveform,
   Blocks,
+  Box,
+  Cable,
   Ellipsis,
   EllipsisVertical,
+  Eraser,
   Eye,
+  FlipHorizontal2,
+  Grid2x2,
+  Move,
   Search,
   ArrowDownToLine,
   CircleCheck,
@@ -22,7 +28,6 @@ import {
   Minus,
   Redo2,
   RotateCw,
-  Settings2,
   SlidersHorizontal,
   Table2,
   Trash2,
@@ -38,11 +43,13 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Badge } from '@/components/ui/badge'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import { compile, transientBranches, groundFlows, wireFlows, type Circuit, type Component, type Kind } from '../circuit/model'
+import { compile, transientBranches, groundFlows, wireFlows, type BreadboardLayout, type Circuit, type Component, type Kind } from '../circuit/model'
 import { currentLimit, ratingsExceeded } from '../circuit/ratings'
-import { matchesGuide } from '../breadboard/model'
-import { readBoardSettings, saveBoardSettings, type BoardSettings } from '../breadboard/settings'
-import { BoardSettingsPanel } from '../breadboard/BoardSettingsPanel'
+import { autoPlaceCircuit, compileBoard } from '../breadboard/compiler'
+import { boardShape } from '../breadboard/model'
+import { defaultBoardSettings, type BoardSize } from '../breadboard/settings'
+import { JUMPER_COLORS } from '../breadboard/types'
+import { useBreadboard } from '../breadboard/useBreadboard'
 import { examples } from '../circuit/examples'
 import { solve, type DiagnosticTarget } from '../engine/solver'
 import Canvas from '../editor/Canvas'
@@ -68,6 +75,7 @@ const exampleNames = Object.keys(examples)
 const kinds = Object.keys(catalog) as Kind[]
 const groups = [...new Set(kinds.map(kind => catalog[kind].group))]
 const one = (n: number | readonly number[]) => typeof n === 'number' ? n : n[0]
+const sizeNames: Record<BoardSize, string> = { mini: 'Mini', half: 'Half', full: 'Full' }
 
 function Setting({ label, checked, onChange }: { label: string; checked: boolean; onChange: (checked: boolean) => void }) {
   return <label className="setting"><span>{label}</span><Switch size="sm" checked={checked} onCheckedChange={onChange} /></label>
@@ -84,7 +92,6 @@ function Label({ children }: { children: ReactNode }) {
 const panelMeta: { id: PanelId; label: string; title: string; icon: ReactNode }[] = [
   { id: 'library', label: 'Library', title: 'Components', icon: <Blocks /> },
   { id: 'inspector', label: 'Inspector', title: 'Properties', icon: <SlidersHorizontal /> },
-  { id: 'board', label: 'Breadboard settings', title: 'Breadboard settings', icon: <Settings2 /> },
   { id: 'display', label: 'Display', title: 'Visualization', icon: <Eye /> },
   { id: 'results', label: 'Results', title: 'Simulation results', icon: <Table2 /> },
   { id: 'scope', label: 'Oscilloscope', title: 'Oscilloscope', icon: <AudioWaveform /> },
@@ -105,12 +112,11 @@ export type WorkbenchProps = {
   onLanguageChange: (language: Language) => void
   onThemeChange: (preference: ThemePreference) => void
   onCircuitChange: (projectId: string, circuit: Circuit) => void
-  onViewModeChange: (projectId: string, view: PreferredView) => void
   onBackToHub: () => void
   onSelectTab: (projectId: string) => void
   onCloseTab: (projectId: string) => void
   onOpenProject: (projectId: string) => void
-  onQuickCreateBlank: () => void
+  onQuickCreateBlank: (view?: PreferredView) => void
   onOpenNewProjectModal: () => void
   onRenameProject: (projectId: string, name: string) => Promise<void>
   onEditProjectDetails: (project: Project) => void
@@ -132,7 +138,6 @@ export function Workbench({
   onLanguageChange,
   onThemeChange,
   onCircuitChange,
-  onViewModeChange,
   onBackToHub,
   onSelectTab,
   onCloseTab,
@@ -144,6 +149,10 @@ export function Workbench({
   onImportBundleFile,
 }: WorkbenchProps) {
   const palette = palettes[theme]
+  const viewMode = project.preferredView
+  const schematic = viewMode === 'schematic'
+  const boardSettings = project.boardSettings ?? defaultBoardSettings
+
   const [query, setQuery] = useState('')
   const normalize = (value: string) => value.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase()
   const matches = kinds.filter(kind => normalize(`${t(catalog[kind].name)} ${catalog[kind].prefix}`).includes(normalize(query.trim())))
@@ -151,15 +160,8 @@ export function Workbench({
     onCircuitChange: next => onCircuitChange(project.id, next),
     externalStorageError: storageMode === 'memory' || saveState === 'error',
   })
-  const [viewMode, setViewMode] = useState<PreferredView>(project.preferredView)
   const panels = usePanels(viewMode)
   const [menuOpen, setMenuOpen] = useState(false)
-  const [boardOpened, setBoardOpened] = useState(project.preferredView === 'board')
-  useEffect(() => {
-    setViewMode(project.preferredView)
-    if (project.preferredView === 'board') setBoardOpened(true)
-  }, [project.preferredView])
-  const [boardSettings, setBoardSettings] = useState<BoardSettings>(readBoardSettings)
   const [probe, setProbe] = useState('')
   const [running, setRunning] = useState(true)
   const [speed, setSpeed] = useState(1)
@@ -173,8 +175,35 @@ export function Workbench({
   const stage = useRef<HTMLElement>(null)
   // Circuits fit the free editor area when they open: on first load and after loading an example or a file.
   const [fitRequest, setFitRequest] = useState(0)
-  const net = useMemo(() => compile(editor.simulated), [editor.simulated])
-  const guide = useMemo(() => matchesGuide(editor.circuit), [editor.circuit])
+
+  const shape = useMemo(
+    () => boardShape(boardSettings),
+    [boardSettings.size, boardSettings.rails, boardSettings.splitRails],
+  )
+  const simulatedBoardLayout = useMemo<BreadboardLayout>(() => {
+    if (editor.simulated.breadboard) return editor.simulated.breadboard
+    if (!schematic && editor.simulated.wires.length > 0) return autoPlaceCircuit(editor.simulated, shape)
+    return { placements: [], jumpers: [] }
+  }, [editor.simulated, schematic, shape])
+  const boardLayout = useMemo<BreadboardLayout>(() => {
+    if (editor.circuit.breadboard) return editor.circuit.breadboard
+    if (!schematic && editor.circuit.wires.length > 0) return autoPlaceCircuit(editor.circuit, shape)
+    return { placements: [], jumpers: [] }
+  }, [editor.circuit, schematic, shape])
+  const breadboard = useBreadboard({
+    circuit: editor.circuit,
+    layout: boardLayout,
+    shape,
+    selected: editor.selected,
+    onSelect: editor.select,
+    onCommit: editor.commit,
+  })
+
+  const net = useMemo(() => schematic
+    ? compile(editor.simulated)
+    : compileBoard(shape, editor.simulated.components, simulatedBoardLayout),
+  [schematic, shape, editor.simulated, simulatedBoardLayout])
+
   const solved = useMemo<ReturnType<typeof solve>>(() => net.branches.length > 200
     ? { ok: false as const, error: 'This DC workbench supports up to 200 electrical branches per simulation.' }
     : solve(net.branches), [net])
@@ -189,12 +218,21 @@ export function Workbench({
   const pendingSample = transient.enabled && !transient.result
   const valid = !pendingSample && active.solved.ok ? active.solved : null
   const currents = useMemo(() => Object.fromEntries(Object.entries(valid?.branches ?? {}).map(([id, branch]) => [id, branch.current])), [valid])
-  const flows = useMemo(() => valid ? wireFlows(active.circuit, currents) : {}, [active.circuit, currents, valid])
-  const grounds = useMemo(() => valid ? groundFlows(active.circuit, currents) : {}, [active.circuit, currents, valid])
+  const trippedFuses = useMemo(() => {
+    const tripped = new Set<string>()
+    if (!valid) return tripped
+    for (const warning of valid.warnings) {
+      const targetId = valid.warningTargets?.[warning]?.branchId
+      if (targetId && warning.startsWith('Fuse ')) tripped.add(targetId)
+    }
+    return tripped
+  }, [valid])
+  const flows = useMemo(() => valid && schematic ? wireFlows(active.circuit, currents) : {}, [active.circuit, currents, schematic, valid])
+  const grounds = useMemo(() => valid && schematic ? groundFlows(active.circuit, currents) : {}, [active.circuit, currents, schematic, valid])
   const inspected = editor.selected.length === 1 ? editor.circuit.components.find(c => c.id === editor.selected[0]) : undefined
   const read = inspected ? valid?.branches[inspected.id] : undefined
-  const wire = editor.selected.length === 1 ? editor.circuit.wires.find(w => w.id === editor.selected[0]) : undefined
-  const hasCircuit = editor.circuit.components.length > 0
+  const wire = schematic && editor.selected.length === 1 ? editor.circuit.wires.find(w => w.id === editor.selected[0]) : undefined
+  const hasCircuit = schematic ? editor.circuit.components.length > 0 : boardLayout.placements.length > 0
   const fault = !pendingSample && !active.solved.ok && hasCircuit ? active.solved.error : ''
   const alerts = valid ? ratingsExceeded(active.circuit.components, valid.branches) : []
   const target = !active.solved.ok ? active.solved.target : undefined
@@ -206,15 +244,19 @@ export function Workbench({
   const flagged = [...new Set([...alerts.map(a => a.id), ...faultIds, ...warnings.flatMap(w => w.ids)])]
   const delivered = Object.values(valid?.branches ?? {}).reduce((total, b) => total + Math.max(0, -b.power), 0)
 
-  // Panels: which ones apply to the current view, and which of those are open and docked.
-  const available = (id: PanelId) => id === 'scope' ? transient.enabled : id === 'board' ? viewMode === 'board' : true
+  // Panels: each project type shows only the panels relevant to it (no board settings panel in the editor).
+  const available = (id: PanelId) => {
+    if (id === 'board') return false
+    if (id === 'scope') return transient.enabled
+    if (id === 'display') return schematic
+    return true
+  }
   const shown = panelMeta.filter(panel => available(panel.id) && panels.layout[panel.id].open)
   // A tablet docks at most one side panel; any other pinned side panel floats.
   const dockedSide = shown.find(panel => panelSides[panel.id] !== 'bottom' && panels.docked(panel.id))?.id
   const docked = (id: PanelId) => panels.docked(id) && (panels.tier !== 'tablet' || panelSides[id] === 'bottom' || id === dockedSide)
   const placed = (side: 'left' | 'right' | 'bottom', dock: boolean) => shown.filter(panel => panelSides[panel.id] === side && docked(panel.id) === dock)
   const dock = { left: placed('left', true).length > 0, right: placed('right', true).length > 0, bottom: placed('bottom', true).length > 0 }
-  const schematic = viewMode === 'schematic'
   const wide = panels.tier === 'desktop'
   // The editors frame their content in the area left free by the floating chrome. Phone sheets are transient, so only
   // the status line and the launcher count there.
@@ -222,12 +264,6 @@ export function Workbench({
     ? { top: ['.project-tabs-bar', '.topbar', '.hud-top > .toolbar'], bottom: ['.statusbar', '.launcher-host'], left: [], right: [] }
     : { top: ['.project-tabs-bar', '.topbar', '.hud-top > .toolbar'], bottom: ['.statusbar', '.float-bottom'], left: ['.launcher-host', '.float-left'], right: ['.float-right'] }
   const insets = useInsets(stage, insetSources, `${viewMode}:${panels.tier}:${shown.map(panel => `${panel.id}${docked(panel.id) ? '+' : ''}`)}`)
-
-  function switchView(next: PreferredView) {
-    if (next === 'board') setBoardOpened(true)
-    setViewMode(next)
-    if (next !== project.preferredView) onViewModeChange(project.id, next)
-  }
 
   function toggleRun() {
     if (running) setHeld({ net, solved, circuit: editor.circuit })
@@ -240,29 +276,59 @@ export function Workbench({
       if (event.defaultPrevented) return
       if (event.target instanceof HTMLElement && (event.target.closest('input, textarea, select, [contenteditable], [role="slider"], [role="option"], [role="listbox"], [role="dialog"], [role="alertdialog"], [aria-expanded="true"]') || event.target.isContentEditable || (key === ' ' && event.target.closest('button')))) return
       if ((event.metaKey || event.ctrlKey) && (key === 'z' || key === 'y')) { event.preventDefault(); editor.history(key === 'y' || event.shiftKey) }
-      else if ((event.metaKey || event.ctrlKey) && key === 'c' && editor.canCopy && !window.getSelection()?.toString()) { event.preventDefault(); editor.copy() }
-      else if ((event.metaKey || event.ctrlKey) && key === 'v' && editor.canPaste) { event.preventDefault(); editor.paste() }
-      else if ((event.metaKey || event.ctrlKey) && key === 'd' && editor.canCopy) { event.preventDefault(); editor.duplicate() }
-      else if (key === 'r') editor.rotate()
-      else if (key === 'delete' || key === 'backspace') { event.preventDefault(); editor.remove() }
+      else if (schematic && (event.metaKey || event.ctrlKey) && key === 'c' && editor.canCopy && !window.getSelection()?.toString()) { event.preventDefault(); editor.copy() }
+      else if (schematic && (event.metaKey || event.ctrlKey) && key === 'v' && editor.canPaste) { event.preventDefault(); editor.paste() }
+      else if (schematic && (event.metaKey || event.ctrlKey) && key === 'd' && editor.canCopy) { event.preventDefault(); editor.duplicate() }
+      else if (key === 'r' && schematic) editor.rotate()
+      else if (key === 'f' && !schematic && breadboard.canFlip) { event.preventDefault(); breadboard.flipSelected() }
+      else if (key === 'delete' || key === 'backspace') {
+        event.preventDefault()
+        if (schematic) editor.remove()
+        else breadboard.deleteSelected()
+      }
       else if (key === ' ') { event.preventDefault(); if (!event.repeat) toggleRun() }
-      else if (key === 'escape') { editor.setTool('select'); editor.select([]) }
-      else if (key === 'w') editor.setTool('wire')
+      else if (key === 'escape') {
+        if (schematic) { editor.setTool('select'); editor.select([]) }
+        else { breadboard.cancelPending(); breadboard.setTool('select'); editor.select([]) }
+      }
+      else if (key === 'w') {
+        if (schematic) editor.setTool('wire')
+        else breadboard.setTool('wire')
+      }
+      else if (key === 'p' && !schematic) breadboard.setTool('probe')
     }
     window.addEventListener('keydown', keyboard)
     return () => window.removeEventListener('keydown', keyboard)
   })
-  useEffect(() => { saveBoardSettings(boardSettings) }, [boardSettings])
   // Runs once the opened circuit has rendered; the view is not part of the circuit or its undo history.
-  useEffect(() => { editor.fit() }, [fitRequest])
+  useEffect(() => { if (schematic) editor.fit() }, [fitRequest, schematic])
+
   function openCircuit(next: Circuit) {
     setFitRequest(request => request + 1)
     editor.replace(next); setRunning(true); setHeld(null); transient.reset(); setProbe('')
+    breadboard.cancelPending()
   }
   function chooseExample(name: string | null) {
-    if (name && examples[name]) { openCircuit(structuredClone(examples[name])); setMessage(''); setMenuOpen(false) }
+    if (!name || !examples[name]) return
+    const base = structuredClone(examples[name])
+    if (schematic) {
+      openCircuit(base)
+    } else {
+      openCircuit({
+        ...base,
+        wires: [],
+        junctions: [],
+        breadboard: autoPlaceCircuit(base, shape),
+      })
+    }
+    setMessage('')
+    setMenuOpen(false)
   }
-  function newCircuit() { openCircuit(blankCircuit()); setMessage(''); setMenuOpen(false) }
+  function newCircuit() {
+    openCircuit(schematic ? blankCircuit() : { ...blankCircuit(), breadboard: { placements: [], jumpers: [] } })
+    setMessage('')
+    setMenuOpen(false)
+  }
   function importFile() { setMenuOpen(false); file.current?.click() }
   function exportAs(kind: 'JSON' | 'PNG') {
     setMenuOpen(false)
@@ -276,11 +342,18 @@ export function Workbench({
     try {
       const parsed = parseImportJson(await chosen.text(), { fileName: chosen.name, byteLength: chosen.size })
       if (parsed.kind === 'legacy-circuit') {
-        openCircuit(parsed.circuit)
+        const next = !schematic && !parsed.circuit.breadboard && parsed.circuit.wires.length > 0
+          ? { ...parsed.circuit, wires: [], junctions: [], breadboard: autoPlaceCircuit(parsed.circuit, shape) }
+          : parsed.circuit
+        openCircuit(next)
         setImportError(false)
         setMessage('Circuit imported.')
       } else if (parsed.kind === 'meshlab-project') {
-        openCircuit(parsed.file.project.circuit)
+        const raw = parsed.file.project.circuit
+        const next = !schematic && !raw.breadboard && raw.wires.length > 0
+          ? { ...raw, wires: [], junctions: [], breadboard: autoPlaceCircuit(raw, shape) }
+          : raw
+        openCircuit(next)
         setImportError(false)
         setMessage('Project imported.')
       } else if (onImportBundleFile) {
@@ -302,6 +375,15 @@ export function Workbench({
     return exportPng(copy, editor.view)
   }
 
+  function handleLibraryPartClick(kind: Kind) {
+    if (schematic) {
+      editor.add(kind)
+    } else {
+      breadboard.startPlaceNew(kind)
+      if (panels.compact) panels.setOpen('library', false)
+    }
+  }
+
   const content: Record<PanelId, ReactNode> = {
     library: <>
       <div className="library-search"><Search size={15} /><Input type="search" aria-label={t('Find components')} placeholder={t('Find components')} value={query} onChange={event => setQuery(event.target.value)} /></div>
@@ -309,17 +391,20 @@ export function Workbench({
         {!matches.length && <p className="panel-empty">{t('No matching components.')}</p>}
         {groups.filter(group => matches.some(kind => catalog[kind].group === group)).map(group => <section key={group}>
           <h3 className="section-label">{t(group)}</h3>
-          {matches.filter(kind => catalog[kind].group === group).map(kind => <Button key={kind} variant="ghost" className="library-part" onClick={() => editor.add(kind)}>
-            <span className="part-icon"><svg viewBox="-42 -27 84 54" aria-hidden="true"><Symbol kind={kind} /></svg></span>
-            <span>{t(catalog[kind].name)}</span><Plus className="add-icon" />
-          </Button>)}
+          {matches.filter(kind => catalog[kind].group === group).map(kind => {
+            const placing = !schematic && breadboard.pending?.type === 'place-new' && breadboard.pending.kind === kind
+            return <Button key={kind} variant="ghost" className="library-part" aria-pressed={placing || undefined} onClick={() => handleLibraryPartClick(kind)}>
+              <span className="part-icon"><svg viewBox="-42 -27 84 54" aria-hidden="true"><Symbol kind={kind} /></svg></span>
+              <span>{t(catalog[kind].name)}</span><Plus className="add-icon" />
+            </Button>
+          })}
         </section>)}
       </div>
     </>,
     inspector: <div className="inspector-body">
       {inspected ? <Properties t={t} key={inspected.id} part={inspected} update={(changes, preview) => editor.update(inspected, changes, preview)} /> :
-        <div className="empty-state"><span className="empty-state-icon"><MousePointer2 size={16} /></span><strong>{wire ? t('Wire selected') : editor.selected.length ? `${editor.selected.length} ${t('items selected')}` : t('Nothing selected')}</strong>
-          <small>{wire ? `${t('Current')}: ${metric(flows[wire.id], 'A')}` : t('Select a component to edit its parameters.')}</small></div>}
+        <div className="empty-state"><span className="empty-state-icon"><MousePointer2 size={16} /></span><strong>{wire ? t('Wire selected') : breadboard.selectedJumper ? t('Selected jumper wire') : editor.selected.length ? `${editor.selected.length} ${t('items selected')}` : t('Nothing selected')}</strong>
+          <small>{wire ? `${t('Current')}: ${metric(flows[wire.id], 'A')}` : breadboard.selectedJumper ? `${breadboard.selectedJumper.from} ↔ ${breadboard.selectedJumper.to}` : t('Select a component to edit its parameters.')}</small></div>}
       {inspected && <div className="measurements"><Reading label={t('Voltage drop')} value={metric(read?.voltage, 'V')} /><Reading label={t('Current')} value={metric(inspected.kind === 'ground' ? grounds[inspected.id] : read?.current, 'A')} /><Reading label={t('Power')} value={metric(read?.power, 'W')} /></div>}
     </div>,
     display: <div className="display-body">
@@ -334,15 +419,15 @@ export function Workbench({
       </section>
       <section className="panel-section key-guide"><h3 className="section-label">{t('Shortcuts')}</h3><span><kbd>R</kbd> {t('Rotate')}</span><span><kbd>{language === 'es' ? 'Supr' : 'Del'}</kbd> {t('Delete')}</span><span><kbd>{language === 'es' ? 'Espacio' : 'Space'}</kbd> {t('Play / pause')}</span><span><kbd>Esc</kbd> {t('Cancel')}</span></section>
     </div>,
-    board: <BoardSettingsPanel t={t} value={boardSettings} onChange={setBoardSettings} />,
+    board: null,
     results: <>
       <div className="result-summary"><Reading label={t('Nodes')} value={String(Object.keys(valid?.nodes ?? {}).length)} /><Reading label={t('Power delivered')} value={valid ? metric(delivered, 'W') : '—'} />
         <Reading label={t('Power absorbed')} value={valid ? metric(delivered + valid.balance, 'W') : '—'} /><Reading label={t('Residual')} value={valid ? metric(valid.balance, 'W') : '—'} /></div>
       {!valid || !hasCircuit ? <div className="empty-state result-empty"><strong>{t('Reading unavailable')}</strong>
         <small>{t(!hasCircuit ? 'Add components or load an example.' : pendingSample ? 'Awaiting a transient sample' : 'No solution')}</small></div> : <div className="tables">
-        <table><caption className="section-label">{t('Component readings')}</caption><thead><tr><th>{t('Branch')}</th><th>ΔV</th><th>{t('Current')}</th><th>{t('Power')}</th></tr></thead>
-          <tbody>{Object.entries(valid?.branches ?? {}).map(([id, r]) => <tr key={id}><th scope="row">{active.circuit.components.find(c => c.id === id)?.label ?? id}</th><td>{metric(r.voltage, 'V')}</td><td>{metric(r.current, 'A')}</td><td>{metric(r.power, 'W')}</td></tr>)}</tbody></table>
-        <table><caption className="section-label">{t('Node potentials')}</caption><thead><tr><th>{t('Node')}</th><th>{t('Voltage')}</th></tr></thead><tbody>{Object.entries(valid?.nodes ?? {}).map(([node, volts]) => <tr key={node}><th scope="row">{node === '0' ? 'GND' : node}</th><td>{metric(volts, 'V')}</td></tr>)}</tbody></table>
+        <div className="table-wrap"><table><caption className="section-label">{t('Component readings')}</caption><thead><tr><th>{t('Branch')}</th><th>ΔV</th><th>{t('Current')}</th><th>{t('Power')}</th></tr></thead>
+          <tbody>{Object.entries(valid?.branches ?? {}).map(([id, r]) => <tr key={id}><th scope="row">{active.circuit.components.find(c => c.id === id)?.label ?? id}</th><td>{metric(r.voltage, 'V')}</td><td>{metric(r.current, 'A')}</td><td>{metric(r.power, 'W')}</td></tr>)}</tbody></table></div>
+        <div className="table-wrap"><table><caption className="section-label">{t('Node potentials')}</caption><thead><tr><th>{t('Node')}</th><th>{t('Voltage')}</th></tr></thead><tbody>{Object.entries(valid?.nodes ?? {}).map(([node, volts]) => <tr key={node}><th scope="row">{node === '0' ? 'GND' : node}</th><td>{metric(volts, 'V')}</td></tr>)}</tbody></table></div>
       </div>}
     </>,
     scope: <Scope t={t} palette={palette} samples={transient.samples} time={transient.time} parts={probeParts} probe={activeProbe} onProbe={setProbe} reset={transient.reset} />,
@@ -362,7 +447,7 @@ export function Workbench({
     <Button variant="ghost" size={size} onClick={importFile}><Upload /><Label>{t('Import')}</Label></Button>
     <div className="export-group" role="group" aria-label={t('Export')}>
       <Button variant="ghost" size={size} onClick={() => exportAs('JSON')}><ArrowDownToLine /> JSON</Button>
-      <Button variant="ghost" size={size} onClick={() => exportAs('PNG')}><ArrowDownToLine /> PNG</Button>
+      {schematic && <Button variant="ghost" size={size} onClick={() => exportAs('PNG')}><ArrowDownToLine /> PNG</Button>}
     </div>
   </>
   const themeSwitch = <ThemeSwitch value={preference} onChange={onThemeChange} t={t} />
@@ -379,6 +464,10 @@ export function Workbench({
     <span className="zoom-level">{Math.round(editor.view.scale * 100)}%</span>
     {tool('Zoom in', <Plus />, () => editor.zoom(1.2))}
   </>
+
+  const modeLabel = schematic
+    ? t('Circuit')
+    : `${t('Breadboard')} · ${t(sizeNames[boardSettings.size])}`
 
   return <TooltipProvider>
     <div className="workbench" data-tabs="true" data-view={viewMode} data-tier={panels.tier} data-compact={panels.compact}
@@ -402,11 +491,11 @@ export function Workbench({
       />
 
       <header className="topbar">
-        <div className="brand"><div className="brand-icon"><CircuitBoard size={17} /></div><div className="brand-text"><strong>Meshlab<span>.</span></strong><small>{t('DC CIRCUIT WORKBENCH')}</small></div></div>
-        <div className="segmented view-switch" role="group" aria-label={t('Circuit view')}>
-          <Button size="sm" variant="ghost" aria-pressed={schematic} onClick={() => switchView('schematic')}><Waypoints />{t('Schematic')}</Button>
-          <Button size="sm" variant="ghost" aria-pressed={!schematic} onClick={() => switchView('board')}><CircuitBoard />{t('Breadboard')}</Button>
-        </div>
+        <div className="brand"><div className="brand-icon">{schematic ? <Waypoints size={17} /> : <CircuitBoard size={17} />}</div><div className="brand-text"><strong>Meshlab<span>.</span></strong><small>{t('DC CIRCUIT WORKBENCH')}</small></div></div>
+        <span className="workspace-mode-pill" aria-label={t('Project type')}>
+          {schematic ? <Waypoints size={13} /> : <CircuitBoard size={13} />}
+          <span>{modeLabel}</span>
+        </span>
         <Badge variant="outline" className={`state ${fault ? 'state-fault' : running && hasCircuit ? 'state-live' : 'state-idle'}`}><i />{fault ? t('CHECK CIRCUIT') : !hasCircuit ? t('EMPTY') : running ? t(transient.enabled ? 'TRANSIENT LIVE' : 'LIVE DC') : t('PAUSED')}</Badge>
         {wide && <div className="file-actions">
           {examplesSelect}
@@ -441,63 +530,132 @@ export function Workbench({
 
       <main className="stage" ref={stage}>
         <h1 className="sr-only">{t(schematic ? 'Circuit canvas' : 'Breadboard')}</h1>
-        <div className="editor" hidden={!schematic}>
-          <Canvas t={t} palette={palette} svg={editor.svg} circuit={editor.drawn} view={editor.view} selected={editor.selected} flagged={flagged}
-            pins={active.net.nodeByPin} nodes={valid?.nodes ?? {}} readings={valid?.branches ?? {}} flows={flows} grounds={grounds}
-            mode={editor.mode} cursor={editor.cursor} wireFrom={editor.wireFrom} running={running} speed={speed} reverse={reverse}
-            showGround={showGround} showNodes={showNodes} showVoltage={showVoltage} onBackground={editor.backgroundDown}
-            onComponent={editor.componentDown} onEndpoint={editor.endpointDown} onWire={editor.wireDown} onRoute={editor.routeDown}
-            onMove={editor.move} onUp={editor.up} box={editor.box} inset={insets} />
-          {!hasCircuit && <div className="canvas-empty" style={{ paddingTop: insets.top, paddingBottom: insets.bottom, paddingLeft: insets.left, paddingRight: insets.right }}>
-            <span className="canvas-empty-icon"><CircuitBoard /></span><strong>{t('Start a new circuit')}</strong><span>{t('Add components or load an example.')}</span></div>}
-        </div>
-        {boardOpened && <div className="editor" hidden={schematic}>
-          <Suspense fallback={<div className="board-loading" role="status">{t('Loading breadboard…')}</div>}>
-            <Board t={t} theme={theme} guide={guide} settings={boardSettings} circuit={editor.circuit} pins={active.net.nodeByPin} readings={valid?.nodes} currents={currents}
-              selected={editor.selected} onSelect={editor.select} onToggle={part => editor.update(part, { closed: !part.closed })}
-              onLoad={chooseExample} insets={schematic ? undefined : insets} />
-          </Suspense>
-        </div>}
+        {schematic ? (
+          <div className="editor">
+            <Canvas t={t} palette={palette} svg={editor.svg} circuit={editor.drawn} view={editor.view} selected={editor.selected} flagged={flagged}
+              pins={active.net.nodeByPin} nodes={valid?.nodes ?? {}} readings={valid?.branches ?? {}} flows={flows} grounds={grounds}
+              mode={editor.mode} cursor={editor.cursor} wireFrom={editor.wireFrom} running={running} speed={speed} reverse={reverse}
+              showGround={showGround} showNodes={showNodes} showVoltage={showVoltage} onBackground={editor.backgroundDown}
+              onComponent={editor.componentDown} onEndpoint={editor.endpointDown} onWire={editor.wireDown} onRoute={editor.routeDown}
+              onMove={editor.move} onUp={editor.up} box={editor.box} inset={insets} />
+            {!hasCircuit && <div className="canvas-empty" style={{ paddingTop: insets.top, paddingBottom: insets.bottom, paddingLeft: insets.left, paddingRight: insets.right }}>
+              <span className="canvas-empty-icon"><CircuitBoard /></span><strong>{t('Start a new circuit')}</strong><span>{t('Add components or load an example.')}</span></div>}
+          </div>
+        ) : (
+          <div className="editor">
+            <Suspense fallback={<div className="board-loading" role="status">{t('Loading breadboard…')}</div>}>
+              <Board t={t} theme={theme} settings={boardSettings} circuit={editor.circuit} layout={boardLayout} board={breadboard}
+                pins={active.net.nodeByPin} readings={valid?.nodes} branchReadings={valid?.branches} trippedFuses={trippedFuses}
+                selected={editor.selected} onSelect={editor.select} onToggle={part => editor.update(part, { closed: !part.closed })}
+                insets={insets} />
+            </Suspense>
+          </div>
+        )}
 
         <div className="hud-top">
-          {schematic && <div className="toolbar" role="group" aria-label={t('SCHEMATIC TOOLS')}>
-            <div className="tool-group">
-              {tool('Select and move', <MousePointer2 />, () => editor.setTool('select'), { pressed: editor.mode === 'select' })}
-              {tool('Wire (W)', <Waypoints />, () => editor.setTool('wire'), { pressed: editor.mode === 'wire' })}
-              {tool('Pan', <Hand />, () => editor.setTool('pan'), { pressed: editor.mode === 'pan' })}
+          {schematic ? (
+            <div className="toolbar" role="group" aria-label={t('SCHEMATIC TOOLS')}>
+              <div className="tool-group">
+                {tool('Select and move', <MousePointer2 />, () => editor.setTool('select'), { pressed: editor.mode === 'select' })}
+                {tool('Wire (W)', <Waypoints />, () => editor.setTool('wire'), { pressed: editor.mode === 'wire' })}
+                {tool('Pan', <Hand />, () => editor.setTool('pan'), { pressed: editor.mode === 'pan' })}
+              </div>
+              <div className="tool-group">
+                {tool('Undo', <Undo2 />, () => editor.history(false), { disabled: !editor.canUndo })}
+                {tool('Redo', <Redo2 />, () => editor.history(true), { disabled: !editor.canRedo })}
+                {tool('Rotate (R)', <RotateCw />, editor.rotate, { disabled: !editor.selected.length })}
+                {tool('Delete (Del)', <Trash2 />, editor.remove, { disabled: !editor.selected.length })}
+              </div>
+              <div className="tool-group tools-extra">{clipboardTools}</div>
+              <div className="tool-group">
+                <span className="tools-extra">{zoomTools}</span>
+                {tool('Fit to circuit', <Crosshair />, editor.fit)}
+                {/* Narrow stages keep the less frequent tools in an overflow so the toolbar never scrolls sideways. */}
+                <span className="tools-more"><Popover>
+                  <PopoverTrigger render={<Button variant="ghost" size="icon-sm" className="tool" aria-label={t('More tools')} />}><EllipsisVertical /></PopoverTrigger>
+                  <PopoverContent className="tools-menu" align="end" aria-label={t('More tools')}>
+                    <div className="tool-group">{clipboardTools}</div>
+                    <div className="tool-group">{zoomTools}</div>
+                  </PopoverContent>
+                </Popover></span>
+              </div>
             </div>
-            <div className="tool-group">
-              {tool('Undo', <Undo2 />, () => editor.history(false), { disabled: !editor.canUndo })}
-              {tool('Redo', <Redo2 />, () => editor.history(true), { disabled: !editor.canRedo })}
-              {tool('Rotate (R)', <RotateCw />, editor.rotate, { disabled: !editor.selected.length })}
-              {tool('Delete (Del)', <Trash2 />, editor.remove, { disabled: !editor.selected.length })}
+          ) : (
+            <div className="toolbar board-toolbar" role="group" aria-label={t('BREADBOARD TOOLS')}>
+              <div className="tool-group">
+                {tool('Select and move', <MousePointer2 />, () => breadboard.setTool('select'), { pressed: breadboard.tool === 'select' && !breadboard.pending })}
+                {tool('Jumper wire (W)', <Cable />, () => breadboard.setTool('wire'), { pressed: breadboard.tool === 'wire' })}
+                {tool('Voltage probe (P)', <Crosshair />, () => breadboard.setTool('probe'), { pressed: breadboard.tool === 'probe' })}
+              </div>
+              <div className="tool-group board-toolbar-colors tools-extra" role="group" aria-label={t('Jumper color')}>
+                {JUMPER_COLORS.map(swatch => (
+                  <button
+                    key={swatch.id}
+                    type="button"
+                    className="board-color-dot"
+                    data-active={breadboard.jumperColor === swatch.hex || undefined}
+                    style={{ '--swatch': swatch.hex } as CSSProperties}
+                    aria-label={t(swatch.name)}
+                    aria-pressed={breadboard.jumperColor === swatch.hex}
+                    onClick={() => breadboard.setJumperColor(swatch.hex)}
+                  />
+                ))}
+              </div>
+              <div className="tool-group">
+                {tool('Undo', <Undo2 />, () => editor.history(false), { disabled: !editor.canUndo })}
+                {tool('Redo', <Redo2 />, () => editor.history(true), { disabled: !editor.canRedo })}
+                {tool('Flip polarity (F)', <FlipHorizontal2 />, breadboard.flipSelected, { disabled: !breadboard.canFlip })}
+                <span className="tools-extra">{tool('Relocate', <Move />, breadboard.startMoveSelected, { disabled: !breadboard.canMove })}</span>
+                {tool('Delete (Del)', <Trash2 />, breadboard.deleteSelected, { disabled: !breadboard.canDelete })}
+              </div>
+              <div className="tool-group">
+                {tool(
+                  breadboard.cameraMode === 'top' ? 'Free 3D view' : 'Top-down 2D view',
+                  breadboard.cameraMode === 'top' ? <Box /> : <Grid2x2 />,
+                  () => breadboard.setCameraMode(mode => mode === 'top' ? '3d' : 'top'),
+                  { pressed: breadboard.cameraMode === 'top' },
+                )}
+                <span className="tools-extra">
+                  {tool('Clear breadboard', <Eraser />, breadboard.clearBoard, { disabled: boardLayout.placements.length === 0 && boardLayout.jumpers.length === 0 })}
+                </span>
+                <span className="tools-more"><Popover>
+                  <PopoverTrigger render={<Button variant="ghost" size="icon-sm" className="tool" aria-label={t('More tools')} />}><EllipsisVertical /></PopoverTrigger>
+                  <PopoverContent className="tools-menu" align="end" aria-label={t('More tools')}>
+                    <div className="board-toolbar-colors" role="group" aria-label={t('Jumper color')}>
+                      {JUMPER_COLORS.map(swatch => (
+                        <button
+                          key={swatch.id}
+                          type="button"
+                          className="board-color-dot"
+                          data-active={breadboard.jumperColor === swatch.hex || undefined}
+                          style={{ '--swatch': swatch.hex } as CSSProperties}
+                          aria-label={t(swatch.name)}
+                          aria-pressed={breadboard.jumperColor === swatch.hex}
+                          onClick={() => breadboard.setJumperColor(swatch.hex)}
+                        />
+                      ))}
+                    </div>
+                    <div className="tool-group">
+                      {tool('Relocate', <Move />, breadboard.startMoveSelected, { disabled: !breadboard.canMove })}
+                      {tool('Clear breadboard', <Eraser />, breadboard.clearBoard, { disabled: boardLayout.placements.length === 0 && boardLayout.jumpers.length === 0 })}
+                    </div>
+                  </PopoverContent>
+                </Popover></span>
+              </div>
             </div>
-            <div className="tool-group tools-extra">{clipboardTools}</div>
-            <div className="tool-group">
-              <span className="tools-extra">{zoomTools}</span>
-              {tool('Fit to circuit', <Crosshair />, editor.fit)}
-              {/* Narrow stages keep the less frequent tools in an overflow so the toolbar never scrolls sideways. */}
-              <span className="tools-more"><Popover>
-                <PopoverTrigger render={<Button variant="ghost" size="icon-sm" className="tool" aria-label={t('More tools')} />}><EllipsisVertical /></PopoverTrigger>
-                <PopoverContent className="tools-menu" align="end" aria-label={t('More tools')}>
-                  <div className="tool-group">{clipboardTools}</div>
-                  <div className="tool-group">{zoomTools}</div>
-                </PopoverContent>
-              </Popover></span>
-            </div>
-          </div>}
+          )}
           {notice ? <div role={fault || importError ? 'alert' : 'status'} className={fault || importError || valid?.warnings.length || alerts.length ? 'notice warning' : 'notice'}>
-            {fault && <div className="diagnostic-row"><span>{diagnostic(language, fault)}</span>{faultIds.length > 0 && <Button size="xs" variant="outline" onClick={() => editor.reveal(faultIds)}>{t('Locate')}</Button>}</div>}
+            {fault && <div className="diagnostic-row"><span>{diagnostic(language, fault)}</span>{faultIds.length > 0 && <Button size="xs" variant="outline" onClick={() => schematic ? editor.reveal(faultIds) : editor.select(faultIds)}>{t('Locate')}</Button>}</div>}
             {alerts.map(alert => {
               const unit = alert.quantity === 'current' ? 'A' : 'W'
               const label = active.circuit.components.find(c => c.id === alert.id)?.label ?? alert.id
               return <div key={`${alert.id}:${alert.quantity}`} className="diagnostic-row">
                 <span><strong>{label}</strong> · {t(alert.quantity === 'current' ? 'Overcurrent' : 'Power limit exceeded')}: {metric(alert.actual, unit)} ({t('Limit')}: {metric(alert.limit, unit)})</span>
-                <Button size="xs" variant="outline" onClick={() => editor.reveal([alert.id])}>{t('Locate')}</Button>
+                <Button size="xs" variant="outline" onClick={() => schematic ? editor.reveal([alert.id]) : editor.select([alert.id])}>{t('Locate')}</Button>
               </div>
             })}{warnings.map(({ message, ids }) => <div key={message} className="diagnostic-row">
               <span>{diagnostic(language, message)}</span>
-              {ids.length > 0 && <Button size="xs" variant="outline" onClick={() => editor.reveal(ids)}>{t('Locate')}</Button>}
+              {ids.length > 0 && <Button size="xs" variant="outline" onClick={() => schematic ? editor.reveal(ids) : editor.select(ids)}>{t('Locate')}</Button>}
             </div>)}{message && <div>{importError ? diagnostic(language, message, true) : t(message)}</div>}
             {editor.storageError && <div>{t('Autosave is unavailable in this browser.')}</div>}
           </div> : null}

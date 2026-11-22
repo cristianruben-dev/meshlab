@@ -70,10 +70,19 @@ export function ProjectCard({
     }
   }
 
-  const partsCount = project.circuit.components.length
-  const wiresCount = project.circuit.wires.length
+  const partsCount = project.preferredView === 'board'
+    ? (project.circuit.breadboard?.placements.length ?? project.circuit.components.length)
+    : project.circuit.components.length
+  const wiresCount = project.preferredView === 'board'
+    ? (project.circuit.breadboard?.jumpers.length ?? 0)
+    : project.circuit.wires.length
+  const connectionUnit = project.preferredView === 'board' ? t('jumpers') : t('wires')
   const updatedText = formatRelativeTime(project.updatedAt, language, t)
-  const viewLabel = project.preferredView === 'board' ? t('Breadboard') : t('Schematic')
+  const sizeLabels = { mini: 'Mini', half: 'Half', full: 'Full' } as const
+  const boardSizeLabel = project.boardSettings ? t(sizeLabels[project.boardSettings.size]) : t('Half')
+  const viewLabel = project.preferredView === 'board'
+    ? `${t('Breadboard')} · ${boardSizeLabel}`
+    : t('Circuit')
 
   const menu = (
     <Popover open={menuOpen} onOpenChange={setMenuOpen}>
@@ -177,7 +186,7 @@ export function ProjectCard({
     return (
       <article className="project-row" data-project-id={project.id}>
         <button type="button" className="project-row-thumb" aria-label={`${t('Open')}: ${project.name}`} onClick={() => onOpen(project)}>
-          <CircuitPreview circuit={project.circuit} preferredView={project.preferredView} palette={palette} t={t} compact />
+          <CircuitPreview circuit={project.circuit} preferredView={project.preferredView} boardSettings={project.boardSettings} palette={palette} t={t} compact />
         </button>
         <div className="project-row-info">
           <div className="project-row-title-line">
@@ -203,7 +212,7 @@ export function ProjectCard({
             {project.preferredView === 'board' ? <CircuitBoard size={12} /> : <Waypoints size={12} />}
             {viewLabel}
           </span>
-          <span className="meta-mono">{partsCount} {t('parts')} · {wiresCount} {t('wires')}</span>
+          <span className="meta-mono">{partsCount} {t('parts')} · {wiresCount} {connectionUnit}</span>
           <span className="meta-time">{updatedText}</span>
         </div>
         <div className="project-row-actions">
@@ -217,7 +226,7 @@ export function ProjectCard({
   return (
     <article className="project-card" data-project-id={project.id}>
       <div className="project-card-media" onClick={() => onOpen(project)}>
-        <CircuitPreview circuit={project.circuit} preferredView={project.preferredView} palette={palette} t={t} />
+        <CircuitPreview circuit={project.circuit} preferredView={project.preferredView} boardSettings={project.boardSettings} palette={palette} t={t} />
         <div className="project-card-overlay-top">
           <span className="view-chip">
             {project.preferredView === 'board' ? <CircuitBoard size={12} /> : <Waypoints size={12} />}
@@ -254,7 +263,7 @@ export function ProjectCard({
         )}
 
         <footer className="project-card-foot">
-          <span className="meta-mono">{partsCount} {t('parts')} · {wiresCount} {t('wires')}</span>
+          <span className="meta-mono">{partsCount} {t('parts')} · {wiresCount} {connectionUnit}</span>
           <span className="meta-time">{updatedText}</span>
         </footer>
       </div>

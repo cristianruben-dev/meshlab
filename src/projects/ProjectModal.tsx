@@ -2,6 +2,10 @@ import { useEffect, useRef, useState } from 'react'
 import { Check, CircuitBoard, Folder as FolderIcon, Plus, Sparkles, Tag as TagIcon, Waypoints, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Switch } from '@/components/ui/switch'
+import { autoPlaceCircuit } from '../breadboard/compiler'
+import { boardShape, tiePoints } from '../breadboard/model'
+import { boardSizes, defaultBoardSettings, type BoardSettings, type BoardSize } from '../breadboard/settings'
 import { examples } from '../circuit/examples'
 import type { Circuit } from '../circuit/model'
 import type { Translate } from '../locale'
@@ -9,6 +13,7 @@ import type { Palette } from '../palette'
 import {
   ACCENT_COLORS,
   blankCircuit,
+  boardSettingsForSize,
   type Folder,
   type PreferredView,
   type Project,
@@ -17,6 +22,12 @@ import {
 import { CircuitPreview } from './CircuitPreview'
 
 const templateNames = Object.keys(examples)
+const sizeNames: Record<BoardSize, string> = { mini: 'Mini', half: 'Half', full: 'Full' }
+const sizeHints: Record<BoardSize, string> = {
+  mini: '17 columns · no power rails',
+  half: '30 columns · 4 power rails',
+  full: '63 columns · 4 power rails',
+}
 
 export type StartingPoint = 'blank-schematic' | 'blank-board' | 'template'
 
@@ -26,6 +37,7 @@ export type ProjectModalSubmit = {
   folderId: string | null
   tagIds: string[]
   preferredView: PreferredView
+  boardSettings?: BoardSettings
   circuit?: Circuit
 }
 
@@ -64,9 +76,11 @@ export function ProjectModal({
   const [description, setDescription] = useState('')
   const [folderId, setFolderId] = useState<string | null>(null)
   const [tagIds, setTagIds] = useState<string[]>([])
-  const [startingPoint, setStartingPoint] = useState<StartingPoint>('blank-schematic')
+  const [projectType, setProjectType] = useState<PreferredView>('schematic')
+  const [boardSize, setBoardSize] = useState<BoardSize>('half')
+  const [splitRails, setSplitRails] = useState(false)
+  const [startFromTemplate, setStartFromTemplate] = useState(false)
   const [templateName, setTemplateName] = useState<string>(templateNames[0])
-  const [preferredView, setPreferredView] = useState<PreferredView>('schematic')
   const [newTagName, setNewTagName] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const nameRef = useRef<HTMLInputElement>(null)
@@ -78,15 +92,21 @@ export function ProjectModal({
       setDescription(initialProject.description)
       setFolderId(initialProject.folderId)
       setTagIds(initialProject.tagIds)
-      setPreferredView(initialProject.preferredView)
+      setProjectType(initialProject.preferredView)
+      const currentSettings = initialProject.boardSettings ?? defaultBoardSettings
+      setBoardSize(currentSettings.size)
+      setSplitRails(currentSettings.splitRails)
+      setStartFromTemplate(false)
     } else {
       setName('')
       setDescription('')
       setFolderId(defaultFolderId)
       setTagIds([])
-      setStartingPoint(defaultStartingPoint)
+      setProjectType(defaultStartingPoint === 'blank-board' ? 'board' : 'schematic')
+      setBoardSize('half')
+      setSplitRails(false)
+      setStartFromTemplate(defaultStartingPoint === 'template')
       setTemplateName(defaultTemplate && examples[defaultTemplate] ? defaultTemplate : templateNames[0])
-      setPreferredView(defaultStartingPoint === 'blank-board' ? 'board' : 'schematic')
     }
     setNewTagName('')
     setSubmitting(false)
@@ -132,7 +152,7 @@ export function ProjectModal({
     setSubmitting(true)
     try {
       const resolvedName = name.trim() || (
-        mode === 'create' && startingPoint === 'template'
+        mode === 'create' && startFromTemplate
           ? t(templateName)
           : t('Untitled Project')
       )
@@ -142,19 +162,39 @@ export function ProjectModal({
           description,
           folderId,
           tagIds,
-          preferredView,
+          preferredView: initialProject?.preferredView ?? projectType,
+          ...(initialProject?.boardSettings ? { boardSettings: initialProject.boardSettings } : {}),
         })
       } else {
-        const nextView: PreferredView = startingPoint === 'blank-board' ? 'board' : 'schematic'
-        const nextCircuit = startingPoint === 'template'
-          ? structuredClone(examples[templateName] ?? blankCircuit())
-          : blankCircuit()
+        const nextBoardSettings = projectType === 'board'
+          ? boardSettingsForSize(boardSize, boardSize === 'full' && splitRails)
+          : undefined
+        let nextCircuit: Circuit
+        if (startFromTemplate) {
+          const base = structuredClone(examples[templateName] ?? blankCircuit())
+          if (projectType === 'board' && nextBoardSettings) {
+            const shape = boardShape(nextBoardSettings)
+            nextCircuit = {
+              ...base,
+              wires: [],
+              junctions: [],
+              breadboard: autoPlaceCircuit(base, shape),
+            }
+          } else {
+            nextCircuit = base
+          }
+        } else {
+          nextCircuit = projectType === 'board'
+            ? { ...blankCircuit(), breadboard: { placements: [], jumpers: [] } }
+            : blankCircuit()
+        }
         await onSubmit({
           name: resolvedName,
           description,
           folderId,
           tagIds,
-          preferredView: nextView,
+          preferredView: projectType,
+          ...(nextBoardSettings ? { boardSettings: nextBoardSettings } : {}),
           circuit: nextCircuit,
         })
       }
@@ -176,7 +216,7 @@ export function ProjectModal({
         <header className="modal-head">
           <div className="modal-title-group">
             <span className="modal-icon" aria-hidden="true">
-              <CircuitBoard size={16} />
+              {projectType === 'board' ? <CircuitBoard size={16} /> : <Waypoints size={16} />}
             </span>
             <h2 id="project-modal-title">{t(mode === 'create' ? 'New project' : 'Edit project')}</h2>
           </div>
@@ -186,6 +226,87 @@ export function ProjectModal({
         </header>
 
         <div className="modal-body">
+          {mode === 'create' ? (
+            <>
+              <div className="modal-field">
+                <span>{t('Project type')}</span>
+                <div className="starter-grid starter-grid-2" role="radiogroup" aria-label={t('Project type')}>
+                  <button
+                    type="button"
+                    role="radio"
+                    aria-checked={projectType === 'schematic'}
+                    className={projectType === 'schematic' ? 'starter-card starter-card-active' : 'starter-card'}
+                    onClick={() => setProjectType('schematic')}
+                  >
+                    <span className="starter-icon"><Waypoints size={17} /></span>
+                    <strong>{t('Circuit')}</strong>
+                    <small>{t('Design and simulate 2D electrical schematics.')}</small>
+                  </button>
+                  <button
+                    type="button"
+                    role="radio"
+                    aria-checked={projectType === 'board'}
+                    className={projectType === 'board' ? 'starter-card starter-card-active' : 'starter-card'}
+                    onClick={() => setProjectType('board')}
+                  >
+                    <span className="starter-icon"><CircuitBoard size={17} /></span>
+                    <strong>{t('Breadboard')}</strong>
+                    <small>{t('Build and test circuits on a 3D breadboard.')}</small>
+                  </button>
+                </div>
+              </div>
+
+              {projectType === 'board' && (
+                <div className="modal-field">
+                  <span>{t('Breadboard size')}</span>
+                  <div className="starter-grid" role="radiogroup" aria-label={t('Breadboard size')}>
+                    {boardSizes.map(size => {
+                      const active = boardSize === size
+                      const pts = tiePoints(boardShape(boardSettingsForSize(size)))
+                      return (
+                        <button
+                          key={size}
+                          type="button"
+                          role="radio"
+                          aria-checked={active}
+                          className={active ? 'starter-card starter-card-compact starter-card-active' : 'starter-card starter-card-compact'}
+                          onClick={() => {
+                            setBoardSize(size)
+                            if (size !== 'full') setSplitRails(false)
+                          }}
+                        >
+                          <div className="board-size-title">
+                            <strong>{t(sizeNames[size])}</strong>
+                            <span className="board-size-pts">{pts} {t('tie points')}</span>
+                          </div>
+                          <small>{t(sizeHints[size])}</small>
+                        </button>
+                      )
+                    })}
+                  </div>
+                  {boardSize === 'full' && (
+                    <label className="modal-toggle-row">
+                      <span>
+                        <strong>{t('Split power rails')}</strong>
+                        <small>{t('Separate the left and right halves of each rail.')}</small>
+                      </span>
+                      <Switch size="sm" checked={splitRails} onCheckedChange={setSplitRails} />
+                    </label>
+                  )}
+                </div>
+              )}
+            </>
+          ) : (
+            <div className="modal-readonly-meta">
+              <span className="view-chip">
+                {projectType === 'board' ? <CircuitBoard size={12} /> : <Waypoints size={12} />}
+                {projectType === 'board'
+                  ? `${t('Breadboard')} · ${t(sizeNames[boardSize])}`
+                  : t('Circuit')}
+              </span>
+            </div>
+          )}
+
           <div className="modal-grid-2">
             <label className="modal-field">
               <span>{t('Project name')}</span>
@@ -193,7 +314,7 @@ export function ProjectModal({
                 ref={nameRef}
                 value={name}
                 maxLength={120}
-                placeholder={mode === 'create' && startingPoint === 'template' ? t(templateName) : t('Untitled Project')}
+                placeholder={mode === 'create' && startFromTemplate ? t(templateName) : t('Untitled Project')}
                 onChange={event => setName(event.target.value)}
               />
             </label>
@@ -226,46 +347,33 @@ export function ProjectModal({
             />
           </label>
 
-          {mode === 'create' ? (
+          {mode === 'create' && (
             <div className="modal-field">
               <span>{t('Starting point')}</span>
-              <div className="starter-grid" role="radiogroup" aria-label={t('Starting point')}>
+              <div className="starter-grid starter-grid-2" role="radiogroup" aria-label={t('Starting point')}>
                 <button
                   type="button"
                   role="radio"
-                  aria-checked={startingPoint === 'blank-schematic'}
-                  className={startingPoint === 'blank-schematic' ? 'starter-card starter-card-active' : 'starter-card'}
-                  onClick={() => setStartingPoint('blank-schematic')}
+                  aria-checked={!startFromTemplate}
+                  className={!startFromTemplate ? 'starter-card starter-card-compact starter-card-active' : 'starter-card starter-card-compact'}
+                  onClick={() => setStartFromTemplate(false)}
                 >
-                  <span className="starter-icon"><Waypoints size={17} /></span>
-                  <strong>{t('Blank schematic')}</strong>
-                  <small>{t('Start with an empty schematic canvas.')}</small>
+                  <strong>{t(projectType === 'board' ? 'Blank breadboard' : 'Blank schematic')}</strong>
+                  <small>{t(projectType === 'board' ? 'Start with a clean empty breadboard.' : 'Start with an empty schematic canvas.')}</small>
                 </button>
                 <button
                   type="button"
                   role="radio"
-                  aria-checked={startingPoint === 'blank-board'}
-                  className={startingPoint === 'blank-board' ? 'starter-card starter-card-active' : 'starter-card'}
-                  onClick={() => setStartingPoint('blank-board')}
+                  aria-checked={startFromTemplate}
+                  className={startFromTemplate ? 'starter-card starter-card-compact starter-card-active' : 'starter-card starter-card-compact'}
+                  onClick={() => setStartFromTemplate(true)}
                 >
-                  <span className="starter-icon"><CircuitBoard size={17} /></span>
-                  <strong>{t('Blank breadboard')}</strong>
-                  <small>{t('Start directly in the 3D breadboard view.')}</small>
-                </button>
-                <button
-                  type="button"
-                  role="radio"
-                  aria-checked={startingPoint === 'template'}
-                  className={startingPoint === 'template' ? 'starter-card starter-card-active' : 'starter-card'}
-                  onClick={() => setStartingPoint('template')}
-                >
-                  <span className="starter-icon"><Sparkles size={17} /></span>
-                  <strong>{t('From template')}</strong>
+                  <strong><Sparkles size={13} className="inline-icon" /> {t('From template')}</strong>
                   <small>{t('Start from a ready-to-edit example circuit.')}</small>
                 </button>
               </div>
 
-              {startingPoint === 'template' && (
+              {startFromTemplate && (
                 <div className="template-picker">
                   <span className="section-label">{t('Choose template')}</span>
                   <div className="template-picker-grid">
@@ -287,18 +395,6 @@ export function ProjectModal({
                   </div>
                 </div>
               )}
-            </div>
-          ) : (
-            <div className="modal-field">
-              <span>{t('Default view')}</span>
-              <div className="segmented modal-view-switch" role="group" aria-label={t('Default view')}>
-                <Button type="button" size="sm" variant="ghost" aria-pressed={preferredView === 'schematic'} onClick={() => setPreferredView('schematic')}>
-                  <Waypoints /> {t('Schematic')}
-                </Button>
-                <Button type="button" size="sm" variant="ghost" aria-pressed={preferredView === 'board'} onClick={() => setPreferredView('board')}>
-                  <CircuitBoard /> {t('Breadboard')}
-                </Button>
-              </div>
             </div>
           )}
 

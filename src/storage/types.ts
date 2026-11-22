@@ -1,3 +1,4 @@
+import type { BoardSettings, BoardSize } from '../breadboard/settings'
 import type { Circuit } from '../circuit/model'
 
 export type PreferredView = 'schematic' | 'board'
@@ -10,9 +11,16 @@ export type Project = {
   tagIds: string[]
   pinned: boolean
   preferredView: PreferredView
+  boardSettings?: BoardSettings
   circuit: Circuit
   createdAt: number
   updatedAt: number
+}
+
+export function boardSettingsForSize(size: BoardSize, splitRails = false): BoardSettings {
+  if (size === 'mini') return { size: 'mini', rails: false, splitRails: false, labels: true }
+  if (size === 'full') return { size: 'full', rails: true, splitRails, labels: true }
+  return { size: 'half', rails: true, splitRails: false, labels: true }
 }
 
 export type Folder = {

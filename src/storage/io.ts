@@ -1,3 +1,4 @@
+import { boardSizes, defaultBoardSettings, type BoardSettings, type BoardSize } from '../breadboard/settings'
 import { validateCircuit, type Circuit } from '../circuit/model'
 import type { WorkspaceRepository } from './repository'
 import {
@@ -28,6 +29,15 @@ function asTimestamp(value: unknown, fallback: number): number {
 
 function asPreferredView(value: unknown): PreferredView {
   return value === 'board' ? 'board' : 'schematic'
+}
+
+function asBoardSettings(value: unknown): BoardSettings | undefined {
+  if (!isRecord(value)) return undefined
+  const size = boardSizes.includes(value.size as BoardSize) ? value.size as BoardSize : defaultBoardSettings.size
+  const rails = size === 'mini' ? false : typeof value.rails === 'boolean' ? value.rails : defaultBoardSettings.rails
+  const splitRails = size === 'full' && rails && typeof value.splitRails === 'boolean' ? value.splitRails : false
+  const labels = typeof value.labels === 'boolean' ? value.labels : defaultBoardSettings.labels
+  return { size, rails, splitRails, labels }
 }
 
 function asColor(value: unknown, fallback: string): string {
@@ -166,6 +176,9 @@ function validateProjectFile(input: Record<string, unknown>): ProjectFile {
   const createdAt = asTimestamp(raw.createdAt, now)
   const updatedAt = asTimestamp(raw.updatedAt, createdAt)
 
+  const preferredView = asPreferredView(raw.preferredView)
+  const boardSettings = asBoardSettings(raw.boardSettings) ?? (preferredView === 'board' ? structuredClone(defaultBoardSettings) : undefined)
+
   return {
     kind: 'meshlab-project',
     version: 1,
@@ -175,7 +188,8 @@ function validateProjectFile(input: Record<string, unknown>): ProjectFile {
       name: name.slice(0, 120),
       description: asString(raw.description).trim().slice(0, 500),
       pinned: Boolean(raw.pinned),
-      preferredView: asPreferredView(raw.preferredView),
+      preferredView,
+      ...(boardSettings ? { boardSettings } : {}),
       circuit,
       createdAt,
       updatedAt,
@@ -231,6 +245,8 @@ function validateWorkspaceBundle(input: Record<string, unknown>): WorkspaceBundl
     const rawTagIds = Array.isArray(entry.tagIds) ? entry.tagIds : []
     const validTagIds = [...new Set(rawTagIds.filter((tagId): tagId is string => typeof tagId === 'string' && tagIds.has(tagId)))]
     const createdAt = asTimestamp(entry.createdAt, now)
+    const preferredView = asPreferredView(entry.preferredView)
+    const boardSettings = asBoardSettings(entry.boardSettings) ?? (preferredView === 'board' ? structuredClone(defaultBoardSettings) : undefined)
     return {
       id,
       name: name.slice(0, 120),
@@ -238,7 +254,8 @@ function validateWorkspaceBundle(input: Record<string, unknown>): WorkspaceBundl
       folderId,
       tagIds: validTagIds,
       pinned: Boolean(entry.pinned),
-      preferredView: asPreferredView(entry.preferredView),
+      preferredView,
+      ...(boardSettings ? { boardSettings } : {}),
       circuit,
       createdAt,
       updatedAt: asTimestamp(entry.updatedAt, createdAt),
@@ -365,6 +382,7 @@ export async function importAnyJson(
 
   if (parsed.kind === 'legacy-circuit') {
     const now = Date.now()
+    const hasBreadboardOnly = Boolean(parsed.circuit.breadboard && parsed.circuit.wires.length === 0 && (parsed.circuit.breadboard.placements.length > 0 || parsed.circuit.breadboard.jumpers.length > 0))
     const project: Project = {
       id: crypto.randomUUID(),
       name: parsed.suggestedName,
@@ -372,7 +390,8 @@ export async function importAnyJson(
       folderId: null,
       tagIds: [],
       pinned: false,
-      preferredView: 'schematic',
+      preferredView: hasBreadboardOnly ? 'board' : 'schematic',
+      ...(hasBreadboardOnly ? { boardSettings: structuredClone(defaultBoardSettings) } : {}),
       circuit: structuredClone(parsed.circuit),
       createdAt: now,
       updatedAt: now,
@@ -392,6 +411,7 @@ export async function importAnyJson(
       tagIds,
       pinned: raw.pinned,
       preferredView: raw.preferredView,
+      ...(raw.boardSettings ? { boardSettings: structuredClone(raw.boardSettings) } : {}),
       circuit: structuredClone(raw.circuit),
       createdAt: raw.createdAt,
       updatedAt: raw.updatedAt,
@@ -422,6 +442,7 @@ export async function importAnyJson(
         tagIds,
         pinned: raw.pinned,
         preferredView: raw.preferredView,
+        ...(raw.boardSettings ? { boardSettings: structuredClone(raw.boardSettings) } : {}),
         circuit: structuredClone(raw.circuit),
         createdAt: raw.createdAt,
         updatedAt: raw.updatedAt,

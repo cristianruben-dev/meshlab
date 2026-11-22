@@ -1,7 +1,9 @@
+import type { BoardSettings } from '../breadboard/settings'
 import type { Circuit } from '../circuit/model'
 import { openWorkspaceBackend, type StorageBackend, WORKSPACE_DB_NAME } from './db'
 import {
   blankCircuit,
+  boardSettingsForSize,
   DEFAULT_FOLDER_COLOR,
   DEFAULT_TAG_COLOR,
   type Folder,
@@ -19,12 +21,13 @@ export type CreateProjectInput = {
   tagIds?: string[]
   pinned?: boolean
   preferredView?: PreferredView
+  boardSettings?: BoardSettings
   circuit?: Circuit
   createdAt?: number
   updatedAt?: number
 }
 
-export type UpdateProjectInput = Partial<Pick<Project, 'name' | 'description' | 'folderId' | 'tagIds' | 'pinned' | 'preferredView' | 'circuit'>>
+export type UpdateProjectInput = Partial<Pick<Project, 'name' | 'description' | 'folderId' | 'tagIds' | 'pinned' | 'preferredView' | 'boardSettings' | 'circuit'>>
 
 export type CreateFolderInput = {
   id?: string
@@ -90,6 +93,12 @@ export class WorkspaceRepository {
   async createProject(input: CreateProjectInput): Promise<Project> {
     const now = Date.now()
     const createdAt = input.createdAt ?? now
+    const preferredView = input.preferredView ?? 'schematic'
+    const boardSettings = input.boardSettings
+      ? structuredClone(input.boardSettings)
+      : preferredView === 'board'
+        ? boardSettingsForSize('half')
+        : undefined
     const project: Project = {
       id: input.id ?? generateId(),
       name: sanitizeName(input.name, 'Untitled Project'),
@@ -97,7 +106,8 @@ export class WorkspaceRepository {
       folderId: input.folderId ?? null,
       tagIds: uniqueStrings(input.tagIds ?? []),
       pinned: Boolean(input.pinned),
-      preferredView: input.preferredView ?? 'schematic',
+      preferredView,
+      ...(boardSettings ? { boardSettings } : {}),
       circuit: structuredClone(input.circuit ?? blankCircuit()),
       createdAt,
       updatedAt: input.updatedAt ?? createdAt,
@@ -118,6 +128,7 @@ export class WorkspaceRepository {
       ...(changes.tagIds !== undefined ? { tagIds: uniqueStrings(changes.tagIds) } : {}),
       ...(changes.pinned !== undefined ? { pinned: changes.pinned } : {}),
       ...(changes.preferredView !== undefined ? { preferredView: changes.preferredView } : {}),
+      ...(changes.boardSettings !== undefined ? { boardSettings: structuredClone(changes.boardSettings) } : {}),
       ...(changes.circuit !== undefined ? { circuit: structuredClone(changes.circuit) } : {}),
       updatedAt: touch ? Date.now() : existing.updatedAt,
     }

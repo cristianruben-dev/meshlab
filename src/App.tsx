@@ -8,7 +8,7 @@ import { ProjectsHub } from './projects/ProjectsHub'
 import { downloadProjectFile, downloadWorkspaceBundle, importAnyJson } from './storage/io'
 import { migrateLegacyCircuit } from './storage/migrate'
 import { openWorkspaceRepository, type WorkspaceRepository } from './storage/repository'
-import { blankCircuit, type Folder, type PreferredView, type Project, type Tag } from './storage/types'
+import { blankCircuit, boardSettingsForSize, type Folder, type PreferredView, type Project, type Tag } from './storage/types'
 import { useTheme } from './theme'
 import type { SaveState } from './workspace/ProjectTabs'
 import { Workbench } from './workspace/Workbench'
@@ -222,19 +222,6 @@ export default function App() {
       })
   }, [])
 
-  const handleViewModeChange = useCallback(async (projectId: string, preferredView: PreferredView) => {
-    const repo = repoRef.current
-    setProjects(prev => prev.map(project =>
-      project.id === projectId ? { ...project, preferredView } : project,
-    ))
-    if (!repo) return
-    try {
-      await repo.updateProject(projectId, { preferredView }, { touch: false })
-    } catch {
-      setSaveState('error')
-    }
-  }, [])
-
   const handleCreateProject = useCallback(async (data: ProjectModalSubmit) => {
     const repo = repoRef.current
     if (!repo) return
@@ -245,6 +232,7 @@ export default function App() {
       folderId: data.folderId,
       tagIds: data.tagIds,
       preferredView: data.preferredView,
+      ...(data.boardSettings ? { boardSettings: data.boardSettings } : {}),
       circuit: data.circuit ?? blankCircuit(),
     })
     await refreshFromRepo(repo)
@@ -254,14 +242,17 @@ export default function App() {
     writeHashProjectId(created.id)
   }, [flushPendingSaves, refreshFromRepo])
 
-  const handleQuickCreateBlank = useCallback(async () => {
+  const handleQuickCreateBlank = useCallback(async (view: PreferredView = 'schematic') => {
     await handleCreateProject({
       name: t('Untitled Project'),
       description: '',
       folderId: null,
       tagIds: [],
-      preferredView: 'schematic',
-      circuit: blankCircuit(),
+      preferredView: view,
+      ...(view === 'board' ? { boardSettings: boardSettingsForSize('half') } : {}),
+      circuit: view === 'board'
+        ? { ...blankCircuit(), breadboard: { placements: [], jumpers: [] } }
+        : blankCircuit(),
     })
   }, [handleCreateProject, t])
 
@@ -287,7 +278,6 @@ export default function App() {
       description: data.description,
       folderId: data.folderId,
       tagIds: data.tagIds,
-      preferredView: data.preferredView,
     })
     await refreshFromRepo(repo)
   }, [flushPendingSaves, refreshFromRepo])
@@ -440,12 +430,11 @@ export default function App() {
           onLanguageChange={setLanguage}
           onThemeChange={setPreference}
           onCircuitChange={handleCircuitChange}
-          onViewModeChange={(id, view) => void handleViewModeChange(id, view)}
           onBackToHub={() => void backToHub()}
           onSelectTab={id => void openProjectById(id)}
           onCloseTab={id => void closeTab(id)}
           onOpenProject={id => void openProjectById(id)}
-          onQuickCreateBlank={() => void handleQuickCreateBlank()}
+          onQuickCreateBlank={view => void handleQuickCreateBlank(view)}
           onOpenNewProjectModal={() => setEditorModal({ mode: 'create' })}
           onRenameProject={handleRenameProject}
           onEditProjectDetails={proj => setEditorModal({ mode: 'edit', project: proj })}

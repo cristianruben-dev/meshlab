@@ -181,6 +181,7 @@ describe('ProjectsHub UI', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'New project' }))
     const dialog = screen.getByRole('dialog', { name: 'New project' })
+    expect(within(dialog).getByRole('radio', { name: /Circuit/ }).getAttribute('aria-checked')).toBe('true')
     expect(within(dialog).getByRole('radio', { name: /Blank schematic/ }).getAttribute('aria-checked')).toBe('true')
 
     fireEvent.change(within(dialog).getByRole('textbox', { name: 'Project name' }), { target: { value: 'My Blank Lab' } })
@@ -190,6 +191,27 @@ describe('ProjectsHub UI', () => {
       name: 'My Blank Lab',
       preferredView: 'schematic',
       circuit: blankCircuit(),
+    }))
+  })
+
+  it('asks for breadboard size when creating a Breadboard project', async () => {
+    const props = makeProps()
+    render(<ProjectsHub {...props} />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'New project' }))
+    const dialog = screen.getByRole('dialog', { name: 'New project' })
+    fireEvent.click(within(dialog).getByRole('radio', { name: /Breadboard/ }))
+
+    // Breadboard size selector appears with Mini, Half, Full
+    fireEvent.click(within(dialog).getByRole('radio', { name: /Full.*830/ }))
+    fireEvent.change(within(dialog).getByRole('textbox', { name: 'Project name' }), { target: { value: 'Full Proto' } })
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Create project' }))
+
+    expect(props.onCreateProject).toHaveBeenCalledWith(expect.objectContaining({
+      name: 'Full Proto',
+      preferredView: 'board',
+      boardSettings: { size: 'full', rails: true, splitRails: false, labels: true },
+      circuit: { version: 1, components: [], wires: [], junctions: [], breadboard: { placements: [], jumpers: [] } },
     }))
   })
 

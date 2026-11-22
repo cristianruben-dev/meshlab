@@ -16,19 +16,12 @@ import { LEGACY_CIRCUIT_KEY, migrateLegacyCircuit, MIGRATION_DONE_KEY } from './
 import { openWorkspaceRepository, WorkspaceRepository } from './repository'
 import { blankCircuit } from './types'
 
-type CircuitWithBreadboard = Circuit & {
-  breadboard?: {
-    version: number
-    placements: Array<{ partId: string; holes: string[] }>
-  }
-}
-
-function makeCircuitWithBreadboard(): CircuitWithBreadboard {
+function makeCircuitWithBreadboard(): Circuit {
   return {
     ...structuredClone(examples['Voltage Divider']),
     breadboard: {
-      version: 1,
-      placements: [{ partId: 'R1', holes: ['e5', 'e10'] }],
+      placements: [{ id: 'p-r1', componentId: 'R1', sockets: ['E5', 'E10'] }],
+      jumpers: [{ id: 'j-1', from: 'A5', to: 'T+5', color: '#e5484d' }],
     },
   }
 }
@@ -74,7 +67,7 @@ describe('IndexedDB storage backend & fallback', () => {
       tagIds: [tag.id],
       preferredView: 'board',
     })
-    expect((snapshot.projects[0].circuit as CircuitWithBreadboard).breadboard).toEqual(circuit.breadboard)
+    expect(snapshot.projects[0].circuit.breadboard).toEqual(circuit.breadboard)
     repo2.close()
   })
 
@@ -123,7 +116,7 @@ describe('WorkspaceRepository CRUD & invariants', () => {
     expect(duplicate.pinned).toBe(false)
     expect(duplicate.folderId).toBe(folder.id)
     expect(duplicate.tagIds).toEqual([tagA.id, tagB.id])
-    expect((duplicate.circuit as CircuitWithBreadboard).breadboard).toEqual(circuit.breadboard)
+    expect(duplicate.circuit.breadboard).toEqual(circuit.breadboard)
 
     // Deleting a folder must move projects to Unfiled (folderId: null), never delete them.
     await repo.deleteFolder(folder.id)
@@ -153,7 +146,7 @@ describe('Legacy localStorage migration', () => {
     const first = await migrateLegacyCircuit(repo, { defaultName: 'Recovered' })
     expect(first).not.toBeNull()
     expect(first?.name).toBe('Recovered')
-    expect((first?.circuit as CircuitWithBreadboard).breadboard).toEqual(circuit.breadboard)
+    expect(first?.circuit.breadboard).toEqual(circuit.breadboard)
     expect(localStorage.getItem(MIGRATION_DONE_KEY)).toBe('1')
 
     // Calling again must not duplicate the migrated project.
@@ -200,7 +193,7 @@ describe('Import & Export (ProjectFile, WorkspaceBundle, legacy Circuit v1)', ()
     expect(filePayload.version).toBe(1)
     expect(filePayload.project.folderName).toBe('Sensors')
     expect(filePayload.project.tags).toEqual([{ name: 'DC', color: '#2f6fd6' }])
-    expect((filePayload.project.circuit as CircuitWithBreadboard).breadboard).toEqual(circuit.breadboard)
+    expect(filePayload.project.circuit.breadboard).toEqual(circuit.breadboard)
 
     // Importing into the same repo must not overwrite the existing project or duplicate the folder/tag.
     const result = await importAnyJson(repo, JSON.stringify(filePayload), { fileName: 'bridge.meshlab.json' })
@@ -209,7 +202,7 @@ describe('Import & Export (ProjectFile, WorkspaceBundle, legacy Circuit v1)', ()
     expect(result.importedProjects[0].id).not.toBe(project.id)
     expect(result.importedProjects[0].folderId).toBe(folder.id)
     expect(result.importedProjects[0].tagIds).toEqual([tag.id])
-    expect((result.importedProjects[0].circuit as CircuitWithBreadboard).breadboard).toEqual(circuit.breadboard)
+    expect(result.importedProjects[0].circuit.breadboard).toEqual(circuit.breadboard)
 
     const all = await repo.loadAll()
     expect(all.projects).toHaveLength(2)
@@ -259,22 +252,20 @@ describe('Import & Export (ProjectFile, WorkspaceBundle, legacy Circuit v1)', ()
     const importedPreamp = merged.importedProjects.find(p => p.name === 'Preamp')!
     expect(importedPreamp.folderId).toBe(f1.id)
     expect(importedPreamp.tagIds).toEqual([t1.id])
-    expect((importedPreamp.circuit as CircuitWithBreadboard).breadboard).toEqual(
-      (p1.circuit as CircuitWithBreadboard).breadboard,
-    )
+    expect(importedPreamp.circuit.breadboard).toEqual(p1.circuit.breadboard)
     sourceRepo.close()
   })
 
   it('imports legacy Circuit v1 JSON files and preserves extra fields', async () => {
     const repo = await freshRepo()
     const legacy = makeCircuitWithBreadboard()
-    expect((validateCircuit(legacy) as CircuitWithBreadboard).breadboard).toEqual(legacy.breadboard)
+    expect(validateCircuit(legacy).breadboard).toEqual(legacy.breadboard)
 
     const result = await importAnyJson(repo, JSON.stringify(legacy), { fileName: 'my-divider.json' })
     expect(result.kind).toBe('legacy-circuit')
     expect(result.importedProjects[0].name).toBe('my divider')
     expect(result.importedProjects[0].circuit.components).toHaveLength(4)
-    expect((result.importedProjects[0].circuit as CircuitWithBreadboard).breadboard).toEqual(legacy.breadboard)
+    expect(result.importedProjects[0].circuit.breadboard).toEqual(legacy.breadboard)
     repo.close()
   })
 

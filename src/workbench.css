@@ -103,8 +103,15 @@ button:not(:disabled) { cursor: pointer; }
   --baseline: var(--edge-bottom);
   position: fixed; inset: 0; display: grid; overflow: hidden;
   grid-template-columns: auto minmax(0, 1fr) auto; grid-template-rows: minmax(0, 1fr) auto; background: var(--canvas); }
+.workspace-mode-pill {
+  display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px;
+  border-radius: 999px; border: 1px solid var(--hairline); background: var(--surface-2);
+  color: var(--ink-muted); font-size: 12px; font-weight: 560; white-space: nowrap; flex: none;
+}
+.workspace-mode-pill svg { color: var(--brand); flex: none; }
+
 .workbench[data-tabs="true"] { --tabs-h: 32px; --bar-top: calc(var(--gutter) + var(--tabs-h) + 6px); }
-.workbench[data-view="board"] { background: var(--stage); }
+.workbench[data-view="board"] { background: var(--stage); --hud-space: calc(var(--bar-space) + var(--tools-h) + var(--gap)); }
 .workbench[data-view="schematic"] { --hud-space: calc(var(--bar-space) + var(--tools-h) + var(--gap)); --baseline: calc(var(--edge-bottom) + var(--status-h) + var(--gap)); }
 .workbench[data-dock-left="true"] { --edge-left: var(--gap); }
 .workbench[data-dock-right="true"] { --edge-right: var(--gap); }
@@ -298,7 +305,8 @@ button:not(:disabled) { cursor: pointer; }
 .result-summary .reading span { font-size: 11px; line-height: 16px; }
 .result-summary .reading strong { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 15px; line-height: 20px; font-weight: 600; letter-spacing: -.02em; color: var(--foreground); }
 .result-empty { margin: 16px; }
-.tables { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px 24px; padding: 12px 16px 16px; }
+.tables { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: 14px 24px; padding: 12px 16px 16px; }
+.table-wrap { min-width: 0; overflow-x: auto; }
 .tables table { border-collapse: collapse; text-align: left; font-size: 12px; width: 100%; }
 .tables caption { text-align: left; }
 .tables td, .tables th { white-space: nowrap; height: 28px; padding: 0 8px; border-bottom: 1px solid var(--hairline); }
@@ -310,6 +318,7 @@ button:not(:disabled) { cursor: pointer; }
 .tables tbody tr:last-child > * { border-bottom: 0; }
 .tables th[scope="row"] { font-weight: 600; color: var(--foreground); }
 
+@container (max-width: 680px) { .tables { grid-template-columns: 1fr; } }
 @container (max-width: 520px) { .result-summary { grid-template-columns: 1fr 1fr; } .result-summary .reading { padding-block: 8px; } }
 
 /* Inspector and display settings */

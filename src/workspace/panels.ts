@@ -31,11 +31,11 @@ const layout = (entries: Partial<PanelLayout>): PanelLayout => ({ library: close
 export const defaultLayouts: Stored = {
   desktop: {
     schematic: layout({ library: open(true), inspector: open(true), results: open(false), scope: open(false) }),
-    board: layout({ inspector: open(true), board: open(true) }),
+    board: layout({ library: open(true), inspector: open(true) }),
   },
   tablet: {
     schematic: layout({ results: open(false), scope: open(false) }),
-    board: layout({ board: open(false) }),
+    board: layout({}),
   },
   phone: { schematic: layout({}), board: layout({}) },
 }
