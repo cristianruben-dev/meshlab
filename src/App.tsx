@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { lazy, Suspense, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Activity, Languages, Search, ArrowDownToLine, ChevronDown, CircleCheck, CircuitBoard, ClipboardPaste, Copy, CopyPlus, Crosshair, Hand, MousePointer2, Pause, Play, Plus, Minus, Redo2, RotateCw, Trash2, Undo2, Upload, Waypoints } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -10,6 +10,7 @@ import { Badge } from '@/components/ui/badge'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { compile, transientBranches, groundFlows, wireFlows, type Circuit, type Component, type Kind } from './circuit/model'
 import { currentLimit, ratingsExceeded } from './circuit/ratings'
+import { matchesGuide } from './breadboard/model'
 import { examples } from './circuit/examples'
 import { solve, type DiagnosticTarget } from './engine/solver'
 import Canvas from './editor/Canvas'
@@ -21,6 +22,7 @@ import { Symbol } from './editor/Symbol'
 import { readLanguage, translate, diagnostic, type Language, type Translate } from './locale'
 import { exportJson, exportPng, importJson } from './editor/io'
 
+const Board = lazy(() => import('./breadboard/Board'))
 const exampleNames = Object.keys(examples)
 const kinds = Object.keys(catalog) as Kind[]
 const groups = [...new Set(kinds.map(kind => catalog[kind].group))]
@@ -49,6 +51,8 @@ export default function App() {
   const normalize = (value: string) => value.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase()
   const matches = kinds.filter(kind => normalize(`${t(catalog[kind].name)} ${catalog[kind].prefix}`).includes(normalize(query.trim())))
   const editor = useEditor(examples[exampleNames[0]] ?? blank)
+  const [viewMode, setViewMode] = useState<'schematic' | 'board'>('schematic')
+  const [boardOpened, setBoardOpened] = useState(false)
   const [probe, setProbe] = useState('')
   const [running, setRunning] = useState(true)
   const [speed, setSpeed] = useState(1)
@@ -61,6 +65,7 @@ export default function App() {
   const [importError, setImportError] = useState(false)
   const file = useRef<HTMLInputElement>(null)
   const net = useMemo(() => compile(editor.simulated), [editor.simulated])
+  const guide = useMemo(() => matchesGuide(editor.circuit), [editor.circuit])
   const solved = useMemo<ReturnType<typeof solve>>(() => net.branches.length > 200
     ? { ok: false as const, error: 'This DC workbench supports up to 200 electrical branches per simulation.' }
     : solve(net.branches), [net])
@@ -171,9 +176,16 @@ export default function App() {
         <main className="center">
           <div className="surface schematic-panel">
             <div className="canvas-head">
-              <div><span className="eyebrow">{t('02 / SCHEMATIC')}</span><h1>{t('Circuit canvas')}</h1></div>
+              <div><span className="eyebrow">{t(viewMode === 'board' ? '02 / BREADBOARD' : '02 / SCHEMATIC')}</span><h1>{t(viewMode === 'board' ? 'Breadboard' : 'Circuit canvas')}</h1></div>
+              <div className="canvas-head-actions">
+                <div className="board-view-control" role="group" aria-label={t('Circuit view')}>
+                  <Button size="sm" variant="ghost" aria-pressed={viewMode === 'schematic'} onClick={() => setViewMode('schematic')}>{t('Schematic')}</Button>
+                  <Button size="sm" variant="ghost" aria-pressed={viewMode === 'board'} onClick={() => { setBoardOpened(true); setViewMode('board') }}>{t('Breadboard')}</Button>
+                </div>
               <Badge variant="outline" className={fault ? 'state-fault' : running && hasCircuit ? 'state-live' : 'state-idle'}><i />{fault ? t('CHECK CIRCUIT') : !hasCircuit ? t('EMPTY') : running ? t(transient.enabled ? 'TRANSIENT LIVE' : 'LIVE DC') : t('PAUSED')}</Badge>
+              </div>
             </div>
+            <div hidden={viewMode === 'board'}>
             <div className="toolbar" role="group" aria-label={t('SCHEMATIC TOOLS')}>
               <div className="tool-group">
                 <Tool label={t('Select and move')} active={editor.mode === 'select'} onClick={() => editor.setTool('select')}><MousePointer2 /></Tool>
@@ -209,6 +221,14 @@ export default function App() {
             </div>
             <div className="canvas-foot"><span><i /> {editor.wireFrom ? t('Select a terminal or wire to connect') : editor.mode === 'wire' ? t('Start at a terminal or wire') : wire ? t('Drag a wire handle to reroute') : t('Click a terminal to start wiring')}</span>
               <span>{editor.circuit.components.length} {t('parts')} · {editor.circuit.wires.length} {t('wires')}</span></div>
+            </div>
+            {boardOpened && <div hidden={viewMode !== 'board'}>
+              <Suspense fallback={<div className="board-unsupported" role="status">{t('Loading breadboard…')}</div>}>
+                <Board t={t} guide={guide} circuit={editor.circuit} pins={active.net.nodeByPin} readings={valid?.nodes} currents={currents}
+                  selected={editor.selected} onSelect={editor.select} onToggle={part => editor.update(part, { closed: !part.closed })}
+                  onLoad={name => { openCircuit(examples[name]); setMessage('') }} />
+              </Suspense>
+            </div>}
           </div>
           {(fault || valid?.warnings.length || alerts.length || message || editor.storageError) ? <div role={fault || importError ? 'alert' : 'status'} className={fault || importError || valid?.warnings.length || alerts.length ? 'notice warning' : 'notice'}>
             {fault && <div className="diagnostic-row"><span>{diagnostic(language, fault)}</span>{faultIds.length > 0 && <Button size="xs" variant="outline" onClick={() => editor.reveal(faultIds)}>{t('Locate')}</Button>}</div>}

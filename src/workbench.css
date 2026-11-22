@@ -204,3 +204,13 @@ kbd { color: #c8d8ea; background: #1c293b; padding: 2px 4px; border-radius: 4px;
 .scope > svg { display: block; width: 100%; height: auto; max-height: 205px; background: #0a111b; border-radius: 0 0 12px 12px; }
 .scope-grid path { fill: none; stroke: #293b51; stroke-width: 1; }
 .scope-grid text { fill: #a9bbd1; font: 11px ui-monospace, monospace; }
+
+.board-view-control { margin-left: auto; }
+.canvas-head-actions { display: flex; flex-wrap: wrap; gap: 7px; justify-content: flex-end; align-items: center; }
+.board-view-control { display: inline-flex; gap: 2px; border: 1px solid #2b3b4d; padding: 2px; border-radius: 9px; background: #0d1722; flex: none; }
+.board-view-control [aria-pressed="true"] { color: #79e8ce; background: #18362f; }
+@media (max-width: 640px) {
+  .board-view-control button { font-size: 11px; }
+  .canvas-head-actions { justify-content: flex-start; }
+  .canvas-head { gap: 8px; flex-wrap: wrap; }
+}
