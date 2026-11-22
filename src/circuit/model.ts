@@ -1,5 +1,8 @@
 import type { DynamicBranch } from '../engine/transient'
 import type { Branch } from '../engine/solver'
+import { SOCKET_PATTERN, type BoardJumper, type BoardPlacement, type BreadboardLayout } from '../breadboard/types'
+
+export type { BoardJumper, BoardPlacement, BreadboardLayout }
 
 export const GRID = 20
 export type Point = { x: number; y: number }
@@ -18,7 +21,7 @@ export type Component = Point & {
 export type Endpoint = { component: string; pin: 0 | 1 } | { junction: string }
 export type Wire = { id: string; from: Endpoint; to: Endpoint; points?: Point[] }
 export type Junction = Point & { id: string }
-export type Circuit = { version: 1; components: Component[]; wires: Wire[]; junctions: Junction[] }
+export type Circuit = { version: 1; components: Component[]; wires: Wire[]; junctions: Junction[]; breadboard?: BreadboardLayout }
 
 const pinKey = (id: string, pin: 0 | 1) => `${id}:${pin}`
 const pinVertex = (id: string, pin: 0 | 1) => `p:${pinKey(id, pin)}`
@@ -337,5 +340,50 @@ export function validateCircuit(value: unknown): Circuit {
     if (wire.points !== undefined) result.points = Array.from(list(wire.points, 'Waypoints'), (p) => point(p, 'Waypoint'))
     return result
   })
-  return { version: 1, components, wires, junctions }
+  if (input.breadboard === undefined) return { version: 1, components, wires, junctions }
+
+  const board = object(input.breadboard, 'Breadboard')
+  const boardIds = new Set<string>()
+  const usedSockets = new Set<string>()
+  const uniqueBoardId = (value: unknown, name: string) => {
+    const id = string(value, `${name} ID`)
+    if (!id.trim()) throw new Error(`${name} ID must not be empty.`)
+    if (boardIds.has(id)) throw new Error(`Duplicate breadboard ID: ${id}.`)
+    boardIds.add(id)
+    return id
+  }
+  const uniqueSocket = (value: unknown, name: string) => {
+    const socket = string(value, name)
+    if (!SOCKET_PATTERN.test(socket)) throw new Error(`Invalid breadboard socket: ${socket}.`)
+    if (usedSockets.has(socket)) throw new Error(`Duplicate breadboard socket: ${socket}.`)
+    usedSockets.add(socket)
+    return socket
+  }
+  const placedComponents = new Set<string>()
+  const placements = Array.from(list(board.placements, 'Breadboard placements'), (entry): BoardPlacement => {
+    const placement = object(entry, 'Breadboard placement')
+    const id = uniqueBoardId(placement.id, 'Breadboard placement')
+    const componentId = string(placement.componentId, `Breadboard placement ${id} componentId`)
+    const component = componentById.get(componentId)
+    if (!component) throw new Error(`Unknown breadboard component: ${componentId}.`)
+    if (placedComponents.has(componentId)) throw new Error(`Duplicate breadboard component: ${componentId}.`)
+    placedComponents.add(componentId)
+    const rawSockets = list(placement.sockets, `Breadboard placement ${id} sockets`)
+    const expected = pins(component).length
+    if (rawSockets.length !== expected) {
+      throw new Error(`Breadboard placement ${id} must specify ${expected} socket${expected === 1 ? '' : 's'}.`)
+    }
+    const sockets = rawSockets.map((entrySocket, index) => uniqueSocket(entrySocket, `Breadboard placement ${id} socket ${index}`))
+    return { id, componentId, sockets }
+  })
+  const jumpers = Array.from(list(board.jumpers, 'Breadboard jumpers'), (entry): BoardJumper => {
+    const jumper = object(entry, 'Breadboard jumper')
+    const id = uniqueBoardId(jumper.id, 'Breadboard jumper')
+    const from = uniqueSocket(jumper.from, `Breadboard jumper ${id} from`)
+    const to = uniqueSocket(jumper.to, `Breadboard jumper ${id} to`)
+    const color = string(jumper.color, `Breadboard jumper ${id} color`)
+    if (!color.trim()) throw new Error(`Breadboard jumper ${id} color must not be empty.`)
+    return { id, from, to, color }
+  })
+  return { version: 1, components, wires, junctions, breadboard: { placements, jumpers } }
 }

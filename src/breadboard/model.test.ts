@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { compile } from '../circuit/model'
 import { examples } from '../circuit/examples'
+import { autoPlaceCircuit, compileBoard, probeBoardNode } from './compiler'
 import { boardGuides, boardShape, holeGroup, matchesGuide, probeNode, tiePoints, verifyBoard } from './model'
 import type { BoardSettings, BoardSize } from './settings'
 
@@ -100,5 +101,17 @@ describe('reference layouts', () => {
     circuit.wires.pop()
     expect(matchesGuide(circuit)).toBeUndefined()
     expect(matchesGuide(structuredClone(examples['LED + Switch']))?.example).toBe('LED + Switch')
+  })
+
+  it('keeps guide placements consistent with autoPlaceCircuit and free probeBoardNode', () => {
+    const shape = boardShape(settings('half'))
+    for (const guide of boardGuides) {
+      const circuit = examples[guide.example]
+      const layout = autoPlaceCircuit(circuit, shape)
+      const net = compileBoard(shape, circuit.components, layout)
+      const supply = layout.placements.find(item => item.componentId === 'V1')!
+      expect(probeBoardNode(shape, layout, net.nodeByPin, supply.sockets[0])).toBe(net.nodeByPin['V1:0'])
+      expect(probeBoardNode(shape, layout, net.nodeByPin, supply.sockets[1])).toBe('0')
+    }
   })
 })
