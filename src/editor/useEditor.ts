@@ -155,7 +155,14 @@ export function useEditor(fallback: Circuit) {
     const touchesSelection = (endpoint: Endpoint) => 'component' in endpoint ? selected.includes(endpoint.component) : selected.includes(endpoint.junction)
     const wires = circuit.wires.filter(w => !selected.includes(w.id) && !touchesSelection(w.from) && !touchesSelection(w.to))
     const junctions = circuit.junctions.filter(j => wires.some(w => [w.from, w.to].some(e => 'junction' in e && e.junction === j.id)))
-    commit({ ...circuit, components: circuit.components.filter(c => !selected.includes(c.id)), wires, junctions })
+    const components = circuit.components.filter(c => !selected.includes(c.id))
+    const breadboard = circuit.breadboard
+      ? {
+          placements: circuit.breadboard.placements.filter(p => !selected.includes(p.componentId) && !selected.includes(p.id)),
+          jumpers: circuit.breadboard.jumpers.filter(j => !selected.includes(j.id)),
+        }
+      : undefined
+    commit({ ...circuit, components, wires, junctions, ...(breadboard ? { breadboard } : {}) })
     setSelected([]); clearTransient()
   }
   function connect(from: Endpoint, to: Endpoint, source = wireDraft ?? circuit) {
@@ -267,7 +274,7 @@ export function useEditor(fallback: Circuit) {
   }
   return { circuit, simulated: propertyPreview ?? circuit, drawn: gestureView ?? wireDraft ?? propertyPreview ?? circuit, selected, view, svg, wireFrom, cursor, mode, box, storageError,
     canCopy: circuit.components.some(c => selected.includes(c.id)), canPaste: !!clipboard, copy, paste, duplicate, routeDown,
-    canUndo: !!past.length, canRedo: !!future.length, history, replace, reveal, fit, zoom, add, update, rotate, remove, setTool,
+    canUndo: !!past.length, canRedo: !!future.length, history, commit, replace, reveal, fit, zoom, add, update, rotate, remove, setTool,
     select: setSelected, endpointDown, wireDown, backgroundDown, componentDown, move, up, svgPoint, world }
 }
 function toggleId(list: string[], key: string) {

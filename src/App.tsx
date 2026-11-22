@@ -1,5 +1,5 @@
-import { lazy, Suspense, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { Activity, AudioWaveform, Blocks, Ellipsis, EllipsisVertical, Eye, Languages, Monitor, Moon, Sun, Search, ArrowDownToLine, CircleCheck, CircuitBoard, ClipboardPaste, Copy, CopyPlus, Crosshair, Hand, MousePointer2, Pause, Play, Plus, Minus, Redo2, RotateCw, Settings2, SlidersHorizontal, Table2, Trash2, Undo2, Upload, Waypoints } from 'lucide-react'
+import { lazy, Suspense, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
+import { Activity, AudioWaveform, Blocks, Box, Cable, Ellipsis, EllipsisVertical, Eraser, Eye, FlipHorizontal2, Grid2x2, Languages, Monitor, Moon, Move, Sun, Search, ArrowDownToLine, CircleCheck, CircuitBoard, ClipboardPaste, Copy, CopyPlus, Crosshair, Hand, MousePointer2, Pause, Play, Plus, Minus, Redo2, RotateCw, Settings2, SlidersHorizontal, Sparkles, Table2, Trash2, Undo2, Upload, Waypoints } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
@@ -8,10 +8,13 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Badge } from '@/components/ui/badge'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import { compile, transientBranches, groundFlows, wireFlows, type Circuit, type Component, type Kind } from './circuit/model'
+import { compile, transientBranches, groundFlows, wireFlows, type BreadboardLayout, type Circuit, type Component, type Kind } from './circuit/model'
 import { currentLimit, ratingsExceeded } from './circuit/ratings'
-import { matchesGuide } from './breadboard/model'
+import { autoPlaceCircuit, compileBoard } from './breadboard/compiler'
+import { boardShape } from './breadboard/model'
 import { readBoardSettings, saveBoardSettings, type BoardSettings } from './breadboard/settings'
+import { JUMPER_COLORS } from './breadboard/types'
+import { useBreadboard } from './breadboard/useBreadboard'
 import { BoardSettingsPanel } from './breadboard/BoardSettingsPanel'
 import { examples } from './circuit/examples'
 import { solve, type DiagnosticTarget } from './engine/solver'
@@ -96,8 +99,28 @@ export default function App() {
   const stage = useRef<HTMLElement>(null)
   // Circuits fit the free editor area when they open: on first load and after loading an example or a file.
   const [fitRequest, setFitRequest] = useState(0)
-  const net = useMemo(() => compile(editor.simulated), [editor.simulated])
-  const guide = useMemo(() => matchesGuide(editor.circuit), [editor.circuit])
+  const shape = useMemo(() => boardShape(boardSettings), [boardSettings.size, boardSettings.rails, boardSettings.splitRails])
+  const simulatedBoardLayout = useMemo<BreadboardLayout>(() => {
+    if (editor.simulated.breadboard) return editor.simulated.breadboard
+    if (editor.simulated.wires.length > 0) return autoPlaceCircuit(editor.simulated, shape)
+    return { placements: [], jumpers: [] }
+  }, [editor.simulated, shape])
+  const boardLayout = useMemo<BreadboardLayout>(() => {
+    if (editor.circuit.breadboard) return editor.circuit.breadboard
+    if (editor.circuit.wires.length > 0) return autoPlaceCircuit(editor.circuit, shape)
+    return { placements: [], jumpers: [] }
+  }, [editor.circuit, shape])
+  const breadboard = useBreadboard({
+    circuit: editor.circuit,
+    layout: boardLayout,
+    shape,
+    selected: editor.selected,
+    onSelect: editor.select,
+    onCommit: editor.commit,
+  })
+  const net = useMemo(() => viewMode === 'board'
+    ? compileBoard(shape, editor.simulated.components, simulatedBoardLayout)
+    : compile(editor.simulated), [viewMode, shape, editor.simulated, simulatedBoardLayout])
   const solved = useMemo<ReturnType<typeof solve>>(() => net.branches.length > 200
     ? { ok: false as const, error: 'This DC workbench supports up to 200 electrical branches per simulation.' }
     : solve(net.branches), [net])
@@ -112,12 +135,23 @@ export default function App() {
   const pendingSample = transient.enabled && !transient.result
   const valid = !pendingSample && active.solved.ok ? active.solved : null
   const currents = useMemo(() => Object.fromEntries(Object.entries(valid?.branches ?? {}).map(([id, branch]) => [id, branch.current])), [valid])
+  const trippedFuses = useMemo(() => {
+    const tripped = new Set<string>()
+    if (!valid?.warningTargets) return tripped
+    for (const warning of valid.warnings) {
+      if (warning.startsWith('Fuse ')) {
+        const id = valid.warningTargets[warning]?.branchId
+        if (id) tripped.add(id)
+      }
+    }
+    return tripped
+  }, [valid])
   const flows = useMemo(() => valid ? wireFlows(active.circuit, currents) : {}, [active.circuit, currents, valid])
   const grounds = useMemo(() => valid ? groundFlows(active.circuit, currents) : {}, [active.circuit, currents, valid])
   const inspected = editor.selected.length === 1 ? editor.circuit.components.find(c => c.id === editor.selected[0]) : undefined
   const read = inspected ? valid?.branches[inspected.id] : undefined
   const wire = editor.selected.length === 1 ? editor.circuit.wires.find(w => w.id === editor.selected[0]) : undefined
-  const hasCircuit = editor.circuit.components.length > 0
+  const hasCircuit = viewMode === 'board' ? boardLayout.placements.length > 0 : editor.circuit.components.length > 0
   const fault = !pendingSample && !active.solved.ok && hasCircuit ? active.solved.error : ''
   const alerts = valid ? ratingsExceeded(active.circuit.components, valid.branches) : []
   const target = !active.solved.ok ? active.solved.target : undefined
@@ -156,8 +190,20 @@ export default function App() {
       const key = event.key.toLowerCase()
       if (event.defaultPrevented) return
       if (event.target instanceof HTMLElement && (event.target.closest('input, textarea, select, [contenteditable], [role="slider"], [role="option"], [role="listbox"], [role="dialog"], [aria-expanded="true"]') || event.target.isContentEditable || (key === ' ' && event.target.closest('button')))) return
-      if ((event.metaKey || event.ctrlKey) && (key === 'z' || key === 'y')) { event.preventDefault(); editor.history(key === 'y' || event.shiftKey) }
-      else if ((event.metaKey || event.ctrlKey) && key === 'c' && editor.canCopy && !window.getSelection()?.toString()) { event.preventDefault(); editor.copy() }
+      if ((event.metaKey || event.ctrlKey) && (key === 'z' || key === 'y')) { event.preventDefault(); editor.history(key === 'y' || event.shiftKey); return }
+      if (viewMode === 'board') {
+        if (key === 'w') breadboard.setTool('wire')
+        else if (key === 'p') breadboard.setTool('probe')
+        else if (key === 'r' || key === 'f') breadboard.flipSelected()
+        else if (key === 'delete' || key === 'backspace') { event.preventDefault(); breadboard.deleteSelected() }
+        else if (key === ' ') { event.preventDefault(); if (!event.repeat) toggleRun() }
+        else if (key === 'escape') {
+          if (breadboard.pending) breadboard.cancelPending()
+          else { breadboard.setTool('select'); editor.select([]) }
+        }
+        return
+      }
+      if ((event.metaKey || event.ctrlKey) && key === 'c' && editor.canCopy && !window.getSelection()?.toString()) { event.preventDefault(); editor.copy() }
       else if ((event.metaKey || event.ctrlKey) && key === 'v' && editor.canPaste) { event.preventDefault(); editor.paste() }
       else if ((event.metaKey || event.ctrlKey) && key === 'd' && editor.canCopy) { event.preventDefault(); editor.duplicate() }
       else if (key === 'r') editor.rotate()
@@ -174,6 +220,7 @@ export default function App() {
   useEffect(() => { editor.fit() }, [fitRequest])
   function openCircuit(next: Circuit) {
     setFitRequest(request => request + 1)
+    breadboard.cancelPending()
     editor.replace(next); setRunning(true); setHeld(null); transient.reset(); setProbe('')
   }
   function chooseExample(name: string | null) {
@@ -205,17 +252,44 @@ export default function App() {
         {!matches.length && <p className="panel-empty">{t('No matching components.')}</p>}
         {groups.filter(group => matches.some(kind => catalog[kind].group === group)).map(group => <section key={group}>
           <h3 className="section-label">{t(group)}</h3>
-          {matches.filter(kind => catalog[kind].group === group).map(kind => <Button key={kind} variant="ghost" className="library-part" onClick={() => editor.add(kind)}>
-            <span className="part-icon"><svg viewBox="-42 -27 84 54" aria-hidden="true"><Symbol kind={kind} /></svg></span>
-            <span>{t(catalog[kind].name)}</span><Plus className="add-icon" />
-          </Button>)}
+          {matches.filter(kind => catalog[kind].group === group).map(kind => {
+            const placingThis = viewMode === 'board' && breadboard.pending?.type === 'place-new' && breadboard.pending.kind === kind
+            return <Button key={kind} variant="ghost" className={`library-part${placingThis ? ' tool-active' : ''}`}
+              aria-pressed={viewMode === 'board' ? placingThis : undefined}
+              onClick={() => viewMode === 'board' ? breadboard.startPlaceNew(kind) : editor.add(kind)}>
+              <span className="part-icon"><svg viewBox="-42 -27 84 54" aria-hidden="true"><Symbol kind={kind} /></svg></span>
+              <span>{t(catalog[kind].name)}</span><Plus className="add-icon" />
+            </Button>
+          })}
         </section>)}
       </div>
     </>,
     inspector: <div className="inspector-body">
-      {inspected ? <Properties t={t} key={inspected.id} part={inspected} update={(changes, preview) => editor.update(inspected, changes, preview)} /> :
-        <div className="empty-state"><span className="empty-state-icon"><MousePointer2 size={16} /></span><strong>{wire ? t('Wire selected') : editor.selected.length ? `${editor.selected.length} ${t('items selected')}` : t('Nothing selected')}</strong>
-          <small>{wire ? `${t('Current')}: ${metric(flows[wire.id], 'A')}` : t('Select a component to edit its parameters.')}</small></div>}
+      {inspected ? <Properties t={t} key={inspected.id} part={inspected} update={(changes, preview) => editor.update(inspected, changes, preview)} />
+        : viewMode === 'board' && breadboard.selectedJumper ? <div className="properties">
+            <div className="part-heading"><span className="part-icon"><Cable size={15} /></span><strong>{t('Jumper selected')}</strong></div>
+            <div className="reading"><span>{t('Jumper wire')}</span><strong>{breadboard.selectedJumper.from} ↔ {breadboard.selectedJumper.to}</strong></div>
+            <div className="field">
+              <span>{t('Jumper color')}</span>
+              <div className="board-color-dots" role="group" aria-label={t('Jumper color')}>
+                {JUMPER_COLORS.map(swatch => (
+                  <button
+                    key={swatch.id}
+                    type="button"
+                    className="board-color-dot"
+                    data-active={breadboard.selectedJumper?.color === swatch.hex || undefined}
+                    style={{ '--swatch': swatch.hex } as CSSProperties}
+                    aria-label={t(swatch.name)}
+                    aria-pressed={breadboard.selectedJumper?.color === swatch.hex}
+                    onClick={() => breadboard.setJumperColor(swatch.hex)}
+                  />
+                ))}
+              </div>
+            </div>
+            <Button size="sm" variant="outline" onClick={breadboard.deleteSelected}><Trash2 size={14} />{t('Delete jumper')}</Button>
+          </div>
+        : <div className="empty-state"><span className="empty-state-icon"><MousePointer2 size={16} /></span><strong>{wire ? t('Wire selected') : editor.selected.length ? `${editor.selected.length} ${t('items selected')}` : t('Nothing selected')}</strong>
+            <small>{wire ? `${t('Current')}: ${metric(flows[wire.id], 'A')}` : t('Select a component to edit its parameters.')}</small></div>}
       {inspected && <div className="measurements"><Reading label={t('Voltage drop')} value={metric(read?.voltage, 'V')} /><Reading label={t('Current')} value={metric(inspected.kind === 'ground' ? grounds[inspected.id] : read?.current, 'A')} /><Reading label={t('Power')} value={metric(read?.power, 'W')} /></div>}
     </div>,
     display: <div className="display-body">
@@ -334,9 +408,10 @@ export default function App() {
         </div>
         {boardOpened && <div className="editor" hidden={schematic}>
           <Suspense fallback={<div className="board-loading" role="status">{t('Loading breadboard…')}</div>}>
-            <Board t={t} theme={theme} guide={guide} settings={boardSettings} circuit={editor.circuit} pins={active.net.nodeByPin} readings={valid?.nodes} currents={currents}
+            <Board t={t} theme={theme} settings={boardSettings} circuit={editor.circuit} layout={boardLayout} board={breadboard}
+              pins={active.net.nodeByPin} readings={valid?.nodes} branchReadings={valid?.branches} trippedFuses={trippedFuses}
               selected={editor.selected} onSelect={editor.select} onToggle={part => editor.update(part, { closed: !part.closed })}
-              onLoad={chooseExample} insets={schematic ? undefined : insets} />
+              insets={schematic ? undefined : insets} />
           </Suspense>
         </div>}
 
@@ -363,6 +438,78 @@ export default function App() {
                 <PopoverContent className="tools-menu" align="end" aria-label={t('More tools')}>
                   <div className="tool-group">{clipboardTools}</div>
                   <div className="tool-group">{zoomTools}</div>
+                </PopoverContent>
+              </Popover></span>
+            </div>
+          </div>}
+          {!schematic && <div className="toolbar board-toolbar" role="group" aria-label={t('BREADBOARD TOOLS')}>
+            <div className="tool-group">
+              {tool('Select and move', <MousePointer2 />, () => breadboard.setTool('select'), { pressed: breadboard.tool === 'select' && !breadboard.pending })}
+              {tool('Jumper wire (W)', <Cable />, () => breadboard.setTool('wire'), { pressed: breadboard.tool === 'wire' })}
+              {tool('Voltage probe (P)', <Crosshair />, () => breadboard.setTool('probe'), { pressed: breadboard.tool === 'probe' })}
+            </div>
+            <div className="tool-group tools-extra">
+              <div className="board-toolbar-colors" role="group" aria-label={t('Jumper color')}>
+                {JUMPER_COLORS.map(swatch => (
+                  <Tooltip key={swatch.id}>
+                    <TooltipTrigger render={
+                      <button
+                        type="button"
+                        className="board-color-dot"
+                        data-active={breadboard.jumperColor === swatch.hex || undefined}
+                        style={{ '--swatch': swatch.hex } as CSSProperties}
+                        aria-label={t(swatch.name)}
+                        aria-pressed={breadboard.jumperColor === swatch.hex}
+                        onClick={() => breadboard.setJumperColor(swatch.hex)}
+                      />
+                    } />
+                    <TooltipContent side="bottom">{t(swatch.name)}</TooltipContent>
+                  </Tooltip>
+                ))}
+              </div>
+            </div>
+            <div className="tool-group">
+              {tool('Undo', <Undo2 />, () => editor.history(false), { disabled: !editor.canUndo })}
+              {tool('Redo', <Redo2 />, () => editor.history(true), { disabled: !editor.canRedo })}
+              {tool('Flip polarity (F)', <FlipHorizontal2 />, breadboard.flipSelected, { disabled: !breadboard.canFlip })}
+              <span className="tools-extra">{tool('Relocate', <Move />, breadboard.startMoveSelected, { disabled: !breadboard.canMove })}</span>
+              {tool('Delete (Del)', <Trash2 />, breadboard.deleteSelected, { disabled: !breadboard.canDelete })}
+            </div>
+            <div className="tool-group">
+              {tool(
+                breadboard.cameraMode === 'top' ? 'Free 3D view' : 'Top-down 2D view',
+                breadboard.cameraMode === 'top' ? <Box /> : <Grid2x2 />,
+                () => breadboard.setCameraMode(breadboard.cameraMode === 'top' ? '3d' : 'top'),
+                { pressed: breadboard.cameraMode === 'top' },
+              )}
+              <span className="tools-extra">
+                {(breadboard.unmountedParts.length > 0 || (editor.circuit.wires.length > 0 && editor.circuit.breadboard !== undefined)) &&
+                  tool('Auto-mount from schematic', <Sparkles />, breadboard.autoMount)}
+                {tool('Clear breadboard', <Eraser />, breadboard.clearBoard, { disabled: boardLayout.placements.length === 0 && boardLayout.jumpers.length === 0 })}
+              </span>
+              <span className="tools-more"><Popover>
+                <PopoverTrigger render={<Button variant="ghost" size="icon-sm" className="tool" aria-label={t('More tools')} />}><EllipsisVertical /></PopoverTrigger>
+                <PopoverContent className="tools-menu" align="end" aria-label={t('More tools')}>
+                  <div className="board-toolbar-colors" role="group" aria-label={t('Jumper color')}>
+                    {JUMPER_COLORS.map(swatch => (
+                      <button
+                        key={swatch.id}
+                        type="button"
+                        className="board-color-dot"
+                        data-active={breadboard.jumperColor === swatch.hex || undefined}
+                        style={{ '--swatch': swatch.hex } as CSSProperties}
+                        aria-label={t(swatch.name)}
+                        aria-pressed={breadboard.jumperColor === swatch.hex}
+                        onClick={() => breadboard.setJumperColor(swatch.hex)}
+                      />
+                    ))}
+                  </div>
+                  <div className="tool-group">
+                    {tool('Relocate', <Move />, breadboard.startMoveSelected, { disabled: !breadboard.canMove })}
+                    {(breadboard.unmountedParts.length > 0 || (editor.circuit.wires.length > 0 && editor.circuit.breadboard !== undefined)) &&
+                      tool('Auto-mount from schematic', <Sparkles />, breadboard.autoMount)}
+                    {tool('Clear breadboard', <Eraser />, breadboard.clearBoard, { disabled: boardLayout.placements.length === 0 && boardLayout.jumpers.length === 0 })}
+                  </div>
                 </PopoverContent>
               </Popover></span>
             </div>
