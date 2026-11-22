@@ -29,21 +29,33 @@ In the inspector, use **Electrical limits** to set a rated current or absorbed p
 
 Use the theme control in the top bar to choose **System**, **Light**, or **Dark**. The app follows the operating system until you pick Light or Dark, then remembers that choice in this browser. Exported PNG images use the colors of the active theme.
 
+## Workspace
+
+The schematic or the 3D breadboard fills the screen. Everything else opens as a panel over it: **Library**, **Inspector**, **Display**, **Results**, **Oscilloscope** (with transient analysis), and **Breadboard settings** (in breadboard view).
+
+| Action | How |
+|--------|-----|
+| Open or close a panel | Use the launcher buttons, or the **×** on the panel. |
+| Float or dock | Use the pin button. Pinned panels make room in the editor; floating panels sit on top with a shadow. |
+| Keyboard | **Esc** closes a floating panel when focus is inside it. |
+
+Panel layout is remembered separately for wide and narrow screens. On phones, panels open as bottom sheets.
+
 ## Breadboard view
 
-Choose **Breadboard** on the canvas, then open **Voltage Divider** or **LED + Switch**. In **Assembled**, select a socket to highlight its conductive strip and read its voltage to ground. In **Guided build**, choose the numbered sockets and check each step; the virtual probe becomes available when the physical connections match the schematic.
+Choose **Breadboard**, then open **Voltage Divider** or **LED + Switch**. The 3D board shows the assembled reference layout. Click a socket to read its voltage to ground, or a part to select it. Drag to orbit and scroll to zoom. From the keyboard, focus the board, move the socket cursor with the arrow keys, and press **Enter** to probe.
 
-The 2D model has 20 columns, two separate five-socket strips per column, and four independent continuous power rails. Some real boards have split rails; [check your hardware for continuity](https://learn.sparkfun.com/tutorials/how-to-use-a-breadboard/) before using the reference layout. Breadboard placement is session-local; JSON and PNG still describe the schematic. Unsupported circuit topologies offer the two guided examples instead of an automatic layout.
+In **Breadboard settings**, choose a size and the board features:
 
-### Optional 3D view
+| Size | Tie points | Layout |
+|------|-----------:|--------|
+| Mini | 170 | 17 columns, no power rails |
+| Half | 400 | 30 columns, four power rails |
+| Full | 830 | 63 columns, four power rails; rails can be split in the middle |
 
-Choose **3D** on the breadboard to see the same layout as a 3D model. Drag to orbit and scroll to zoom, or use the orbit and reset buttons. Click a socket to probe it or a part to select it; guided steps work the same way.
+You can also turn the power rails and socket labels on or off. Reference layouts adapt to the size; without rails, power leads go straight into the terminal strips. Some real boards have split rails, so [check your hardware for continuity](https://learn.sparkfun.com/tutorials/how-to-use-a-breadboard/) before following a layout.
 
-| Topic | Behavior |
-|-------|----------|
-| Default | The 2D board stays the default view and the keyboard-accessible one (arrow keys move between sockets). |
-| Loading | The 3D renderer (three.js) loads only when you open the 3D view. |
-| Fallback | Without WebGL, the app shows a notice and keeps the 2D board. |
+Breadboard settings are saved in this browser. JSON and PNG still describe the schematic. The 3D renderer (three.js) loads only when you open the breadboard; without WebGL, the app shows a message instead. Unsupported circuits offer the two examples instead of an automatic layout.
 
 ## Simulation model
 
