@@ -92,16 +92,18 @@ button:not(:disabled) { cursor: pointer; }
  */
 .workbench {
   --gutter: 12px; --gap: 8px; --radius-surface: 16px; --radius-control: 10px; --radius-chip: 8px;
+  --tabs-h: 0px; --bar-top: var(--gutter);
   --bar-h: 52px; --tools-h: 40px; --launcher-w: 40px; --status-h: 32px;
   --side-left: 288px; --side-right: 312px;
   /* Distance of in-stage chrome from each stage edge: the gutter at the viewport, the gap beside a docked card. */
   --edge-left: var(--gutter); --edge-right: var(--gutter); --edge-bottom: var(--gutter);
-  --bar-space: calc(var(--gutter) + var(--bar-h) + var(--gap));
+  --bar-space: calc(var(--bar-top) + var(--bar-h) + var(--gap));
   --hud-space: var(--bar-space);
   /* Floating panels and sheets rest on this baseline; in the schematic the status line sits below it. */
   --baseline: var(--edge-bottom);
   position: fixed; inset: 0; display: grid; overflow: hidden;
   grid-template-columns: auto minmax(0, 1fr) auto; grid-template-rows: minmax(0, 1fr) auto; background: var(--canvas); }
+.workbench[data-tabs="true"] { --tabs-h: 32px; --bar-top: calc(var(--gutter) + var(--tabs-h) + 6px); }
 .workbench[data-view="board"] { background: var(--stage); }
 .workbench[data-view="schematic"] { --hud-space: calc(var(--bar-space) + var(--tools-h) + var(--gap)); --baseline: calc(var(--edge-bottom) + var(--status-h) + var(--gap)); }
 .workbench[data-dock-left="true"] { --edge-left: var(--gap); }
@@ -117,7 +119,7 @@ button:not(:disabled) { cursor: pointer; }
   backdrop-filter: saturate(1.6) blur(16px); -webkit-backdrop-filter: saturate(1.6) blur(16px); }
 
 /* Floating top bar: 52 px tall with 10 px around its 32 px controls. */
-.topbar { position: absolute; z-index: 40; top: var(--gutter); left: var(--gutter); right: var(--gutter); height: var(--bar-h);
+.topbar { position: absolute; z-index: 40; top: var(--bar-top); left: var(--gutter); right: var(--gutter); height: var(--bar-h);
   display: flex; align-items: center; gap: 8px; padding: 0 10px; border-radius: var(--radius-surface); }
 .topbar > * { flex: none; }
 .brand { display: flex; gap: 10px; align-items: center; white-space: nowrap; padding-right: 4px; }
@@ -282,12 +284,12 @@ button:not(:disabled) { cursor: pointer; }
 /* Notices: floating callouts under the toolbar */
 .notice { display: grid; gap: 6px; width: min(560px, calc(100vw - 2 * var(--gutter))); border: 1px solid var(--ok-border); color: var(--ok); background: color-mix(in oklab, var(--ok-soft) 92%, transparent);
   padding: 10px 14px; border-radius: 12px; font-size: 13px; line-height: 1.45; box-shadow: var(--shadow-float); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
-  animation: panel-in .18s ease-out; }
+  animation: panel-in .18s ease-out; pointer-events: none; }
 .notice.warning { border-color: var(--warn-border); background: color-mix(in oklab, var(--warn-soft) 94%, transparent); color: var(--warn); }
 .notice strong { font-weight: 650; }
 .diagnostic-row { display: flex; gap: 12px; justify-content: space-between; align-items: center; }
 .diagnostic-row + .diagnostic-row { padding-top: 6px; border-top: 1px dashed color-mix(in oklab, currentColor 25%, transparent); }
-.notice [data-slot="button"] { flex: none; color: inherit; border-color: color-mix(in oklab, currentColor 35%, transparent); background: transparent; }
+.notice [data-slot="button"] { flex: none; color: inherit; border-color: color-mix(in oklab, currentColor 35%, transparent); background: transparent; pointer-events: auto; }
 
 /* Results: summary tiles separated by hairlines, then the tables. */
 .panel-results { container-type: inline-size; }

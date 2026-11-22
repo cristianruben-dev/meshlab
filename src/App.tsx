@@ -1,474 +1,514 @@
-import { lazy, Suspense, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { Activity, AudioWaveform, Blocks, Ellipsis, EllipsisVertical, Eye, Languages, Monitor, Moon, Sun, Search, ArrowDownToLine, CircleCheck, CircuitBoard, ClipboardPaste, Copy, CopyPlus, Crosshair, Hand, MousePointer2, Pause, Play, Plus, Minus, Redo2, RotateCw, Settings2, SlidersHorizontal, Table2, Trash2, Undo2, Upload, Waypoints } from 'lucide-react'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Switch } from '@/components/ui/switch'
-import { Slider } from '@/components/ui/slider'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Badge } from '@/components/ui/badge'
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import { compile, transientBranches, groundFlows, wireFlows, type Circuit, type Component, type Kind } from './circuit/model'
-import { currentLimit, ratingsExceeded } from './circuit/ratings'
-import { matchesGuide } from './breadboard/model'
-import { readBoardSettings, saveBoardSettings, type BoardSettings } from './breadboard/settings'
-import { BoardSettingsPanel } from './breadboard/BoardSettingsPanel'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { examples } from './circuit/examples'
-import { solve, type DiagnosticTarget } from './engine/solver'
-import Canvas from './editor/Canvas'
-import { useTransient } from './editor/useTransient'
-import Scope from './editor/Scope'
-import { useEditor } from './editor/useEditor'
-import { catalog, metric, parseMetric } from './editor/catalog'
-import { Symbol } from './editor/Symbol'
-import { readLanguage, translate, diagnostic, type Language, type Translate } from './locale'
-import { exportJson, exportPng, importJson } from './editor/io'
-import { useTheme, type ThemePreference } from './theme'
+import type { Circuit } from './circuit/model'
+import { readLanguage, translate, type Language, type Translate } from './locale'
 import { palettes } from './palette'
-import { IconTool, Launcher, Panel } from './workspace/Panel'
-import { panelSides, usePanels, type PanelId } from './workspace/panels'
-import { useInsets, type InsetSources } from './workspace/useInsets'
+import { ProjectModal, type ProjectModalSubmit } from './projects/ProjectModal'
+import { ProjectsHub } from './projects/ProjectsHub'
+import { downloadProjectFile, downloadWorkspaceBundle, importAnyJson } from './storage/io'
+import { migrateLegacyCircuit } from './storage/migrate'
+import { openWorkspaceRepository, type WorkspaceRepository } from './storage/repository'
+import { blankCircuit, type Folder, type PreferredView, type Project, type Tag } from './storage/types'
+import { useTheme } from './theme'
+import type { SaveState } from './workspace/ProjectTabs'
+import { Workbench } from './workspace/Workbench'
 
-const Board = lazy(() => import('./breadboard/Board'))
-const exampleNames = Object.keys(examples)
-const kinds = Object.keys(catalog) as Kind[]
-const groups = [...new Set(kinds.map(kind => catalog[kind].group))]
-const blank: Circuit = { version: 1, components: [], wires: [], junctions: [] }
-const one = (n: number | readonly number[]) => typeof n === 'number' ? n : n[0]
+const OPEN_TABS_KEY = 'meshlab:workspace:tabs'
 
-const themeOptions = [['system', Monitor, 'System theme'], ['light', Sun, 'Light theme'], ['dark', Moon, 'Dark theme']] as const
-function ThemeSwitch({ value, onChange, t }: { value: ThemePreference; onChange: (value: ThemePreference) => void; t: Translate }) {
-  return <div className="segmented theme-switch" role="group" aria-label={t('Theme')}>
-    {themeOptions.map(([option, Icon, label]) => <Tooltip key={option}><TooltipTrigger render={<Button variant="ghost" size="icon-sm" aria-label={t(label)}
-      aria-pressed={value === option} onClick={() => onChange(option)} />}><Icon /></TooltipTrigger><TooltipContent side="bottom">{t(label)}</TooltipContent></Tooltip>)}
-  </div>
-}
-function Setting({ label, checked, onChange }: { label: string; checked: boolean; onChange: (checked: boolean) => void }) {
-  return <label className="setting"><span>{label}</span><Switch size="sm" checked={checked} onCheckedChange={onChange} /></label>
-}
-function Reading({ label, value }: { label: string; value: string }) {
-  return <div className="reading"><span>{label}</span><strong>{value}</strong></div>
-}
-/** Text that collapses to an icon on narrow top bars while staying the button's accessible name. */
-function Label({ children }: { children: ReactNode }) {
-  return <span className="action-label">{children}</span>
+function readOpenTabs(): string[] {
+  try {
+    const raw = JSON.parse(localStorage.getItem(OPEN_TABS_KEY) ?? '[]')
+    return Array.isArray(raw) ? raw.filter((item): item is string => typeof item === 'string') : []
+  } catch {
+    return []
+  }
 }
 
-/** Launcher label, icon, and panel title of every workspace panel, in launcher order. */
-const panelMeta: { id: PanelId; label: string; title: string; icon: ReactNode }[] = [
-  { id: 'library', label: 'Library', title: 'Components', icon: <Blocks /> },
-  { id: 'inspector', label: 'Inspector', title: 'Properties', icon: <SlidersHorizontal /> },
-  { id: 'board', label: 'Breadboard settings', title: 'Breadboard settings', icon: <Settings2 /> },
-  { id: 'display', label: 'Display', title: 'Visualization', icon: <Eye /> },
-  { id: 'results', label: 'Results', title: 'Simulation results', icon: <Table2 /> },
-  { id: 'scope', label: 'Oscilloscope', title: 'Oscilloscope', icon: <AudioWaveform /> },
-]
+function saveOpenTabs(ids: string[]) {
+  try {
+    localStorage.setItem(OPEN_TABS_KEY, JSON.stringify(ids))
+  } catch { /* Storage is optional. */ }
+}
+
+function readHashProjectId(): string | null {
+  if (typeof window === 'undefined') return null
+  const match = /^#\/project\/([^/?#]+)$/.exec(window.location.hash)
+  return match ? decodeURIComponent(match[1]) : null
+}
+
+function writeHashProjectId(id: string | null) {
+  if (typeof window === 'undefined') return
+  const target = id ? `#/project/${encodeURIComponent(id)}` : ''
+  if (window.location.hash === target) return
+  try {
+    window.history.replaceState(null, '', target || `${window.location.pathname}${window.location.search}`)
+  } catch {
+    window.location.hash = target
+  }
+}
+
+type EditorModalState =
+  | { mode: 'create' }
+  | { mode: 'edit'; project: Project }
+  | null
 
 export default function App() {
   const [language, setLanguage] = useState<Language>(readLanguage)
   const { preference, setPreference, theme } = useTheme()
   const palette = palettes[theme]
-  const [query, setQuery] = useState('')
-  const t: Translate = value => translate(language, value)
-  useEffect(() => {
-    document.documentElement.lang = language
-    document.title = `Meshlab — ${translate(language, 'DC CIRCUIT WORKBENCH')}`
-    try { localStorage.setItem('meshlab:language', language) } catch { /* Storage is optional. */ }
-  }, [language])
-  const normalize = (value: string) => value.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase()
-  const matches = kinds.filter(kind => normalize(`${t(catalog[kind].name)} ${catalog[kind].prefix}`).includes(normalize(query.trim())))
-  const editor = useEditor(examples[exampleNames[0]] ?? blank)
-  const [viewMode, setViewMode] = useState<'schematic' | 'board'>('schematic')
-  const panels = usePanels(viewMode)
-  const [menuOpen, setMenuOpen] = useState(false)
-  const [boardOpened, setBoardOpened] = useState(false)
-  const [boardSettings, setBoardSettings] = useState<BoardSettings>(readBoardSettings)
-  const [probe, setProbe] = useState('')
-  const [running, setRunning] = useState(true)
-  const [speed, setSpeed] = useState(1)
-  const [reverse, setReverse] = useState(false)
-  const [showGround, setShowGround] = useState(true)
-  const [showNodes, setShowNodes] = useState(true)
-  const [showVoltage, setShowVoltage] = useState(false)
-  const [message, setMessage] = useState('')
-  const [importError, setImportError] = useState(false)
-  const file = useRef<HTMLInputElement>(null)
-  const stage = useRef<HTMLElement>(null)
-  // Circuits fit the free editor area when they open: on first load and after loading an example or a file.
-  const [fitRequest, setFitRequest] = useState(0)
-  const net = useMemo(() => compile(editor.simulated), [editor.simulated])
-  const guide = useMemo(() => matchesGuide(editor.circuit), [editor.circuit])
-  const solved = useMemo<ReturnType<typeof solve>>(() => net.branches.length > 200
-    ? { ok: false as const, error: 'This DC workbench supports up to 200 electrical branches per simulation.' }
-    : solve(net.branches), [net])
-  const dynamicBranches = useMemo(() => transientBranches(editor.simulated, net.branches), [editor.simulated, net])
-  const transient = useTransient(dynamicBranches, running)
-  const probeParts = editor.circuit.components.filter(c => c.kind !== 'ground')
-  const activeProbe = probeParts.some(c => c.id === probe) ? probe : transient.capacitors[0]?.id ?? ''
-  // Pausing freezes the displayed measurements as well as the animation.
-  const [held, setHeld] = useState<{ net: typeof net; solved: typeof solved; circuit: Circuit } | null>(null)
-  const active = transient.enabled ? { net, solved: transient.result ?? solved, circuit: editor.circuit }
-    : running || !held ? { net, solved, circuit: editor.circuit } : held
-  const pendingSample = transient.enabled && !transient.result
-  const valid = !pendingSample && active.solved.ok ? active.solved : null
-  const currents = useMemo(() => Object.fromEntries(Object.entries(valid?.branches ?? {}).map(([id, branch]) => [id, branch.current])), [valid])
-  const flows = useMemo(() => valid ? wireFlows(active.circuit, currents) : {}, [active.circuit, currents, valid])
-  const grounds = useMemo(() => valid ? groundFlows(active.circuit, currents) : {}, [active.circuit, currents, valid])
-  const inspected = editor.selected.length === 1 ? editor.circuit.components.find(c => c.id === editor.selected[0]) : undefined
-  const read = inspected ? valid?.branches[inspected.id] : undefined
-  const wire = editor.selected.length === 1 ? editor.circuit.wires.find(w => w.id === editor.selected[0]) : undefined
-  const hasCircuit = editor.circuit.components.length > 0
-  const fault = !pendingSample && !active.solved.ok && hasCircuit ? active.solved.error : ''
-  const alerts = valid ? ratingsExceeded(active.circuit.components, valid.branches) : []
-  const target = !active.solved.ok ? active.solved.target : undefined
-  const targets = (item?: DiagnosticTarget) => item?.branchId ? [item.branchId] : item?.node
-    ? active.circuit.components.filter(c => [0, 1].some(pin => active.net.nodeByPin[`${c.id}:${pin}`] === item.node)).map(c => c.id)
-    : []
-  const faultIds = targets(target)
-  const warnings = valid?.warnings.map(message => ({ message, ids: targets(valid.warningTargets?.[message]) })) ?? []
-  const flagged = [...new Set([...alerts.map(a => a.id), ...faultIds, ...warnings.flatMap(w => w.ids)])]
-  const delivered = Object.values(valid?.branches ?? {}).reduce((total, b) => total + Math.max(0, -b.power), 0)
+  const t: Translate = useCallback((value: string) => translate(language, value), [language])
 
-  // Panels: which ones apply to the current view, and which of those are open and docked.
-  const available = (id: PanelId) => id === 'scope' ? transient.enabled : id === 'board' ? viewMode === 'board' : true
-  const shown = panelMeta.filter(panel => available(panel.id) && panels.layout[panel.id].open)
-  // A tablet docks at most one side panel; any other pinned side panel floats.
-  const dockedSide = shown.find(panel => panelSides[panel.id] !== 'bottom' && panels.docked(panel.id))?.id
-  const docked = (id: PanelId) => panels.docked(id) && (panels.tier !== 'tablet' || panelSides[id] === 'bottom' || id === dockedSide)
-  const placed = (side: 'left' | 'right' | 'bottom', dock: boolean) => shown.filter(panel => panelSides[panel.id] === side && docked(panel.id) === dock)
-  const dock = { left: placed('left', true).length > 0, right: placed('right', true).length > 0, bottom: placed('bottom', true).length > 0 }
-  const schematic = viewMode === 'schematic'
-  const wide = panels.tier === 'desktop'
-  // The editors frame their content in the area left free by the floating chrome. Phone sheets are transient, so only
-  // the status line and the launcher count there.
-  const insetSources: InsetSources = panels.compact
-    ? { top: ['.topbar', '.hud-top > .toolbar'], bottom: ['.statusbar', '.launcher-host'], left: [], right: [] }
-    : { top: ['.topbar', '.hud-top > .toolbar'], bottom: ['.statusbar', '.float-bottom'], left: ['.launcher-host', '.float-left'], right: ['.float-right'] }
-  const insets = useInsets(stage, insetSources, `${viewMode}:${panels.tier}:${shown.map(panel => `${panel.id}${docked(panel.id) ? '+' : ''}`)}`)
+  const [ready, setReady] = useState(false)
+  const [storageMode, setStorageMode] = useState<'indexeddb' | 'memory'>('indexeddb')
+  const [projects, setProjects] = useState<Project[]>([])
+  const [folders, setFolders] = useState<Folder[]>([])
+  const [tags, setTags] = useState<Tag[]>([])
+  const [openProjectIds, setOpenProjectIds] = useState<string[]>([])
+  const [activeProjectId, setActiveProjectId] = useState<string | null>(null)
+  const [screen, setScreen] = useState<'hub' | 'editor'>('hub')
+  const [saveState, setSaveState] = useState<SaveState>('saved')
+  const [hubNotice, setHubNotice] = useState<{ text: string; error?: boolean } | null>(null)
+  const [editorModal, setEditorModal] = useState<EditorModalState>(null)
 
-  function toggleRun() {
-    if (running) setHeld({ net, solved, circuit: editor.circuit })
-    else setHeld(null)
-    setRunning(!running)
-  }
+  const repoRef = useRef<WorkspaceRepository | null>(null)
+  const saveChainRef = useRef<Promise<void>>(Promise.resolve())
+  const pendingCountRef = useRef(0)
+
+  const refreshFromRepo = useCallback(async (repo: WorkspaceRepository) => {
+    const snapshot = await repo.loadAll()
+    setProjects(snapshot.projects)
+    setFolders(snapshot.folders)
+    setTags(snapshot.tags)
+    return snapshot
+  }, [])
+
+  const flushPendingSaves = useCallback(async () => {
+    await saveChainRef.current
+  }, [])
+
   useEffect(() => {
-    function keyboard(event: KeyboardEvent) {
-      const key = event.key.toLowerCase()
-      if (event.defaultPrevented) return
-      if (event.target instanceof HTMLElement && (event.target.closest('input, textarea, select, [contenteditable], [role="slider"], [role="option"], [role="listbox"], [role="dialog"], [aria-expanded="true"]') || event.target.isContentEditable || (key === ' ' && event.target.closest('button')))) return
-      if ((event.metaKey || event.ctrlKey) && (key === 'z' || key === 'y')) { event.preventDefault(); editor.history(key === 'y' || event.shiftKey) }
-      else if ((event.metaKey || event.ctrlKey) && key === 'c' && editor.canCopy && !window.getSelection()?.toString()) { event.preventDefault(); editor.copy() }
-      else if ((event.metaKey || event.ctrlKey) && key === 'v' && editor.canPaste) { event.preventDefault(); editor.paste() }
-      else if ((event.metaKey || event.ctrlKey) && key === 'd' && editor.canCopy) { event.preventDefault(); editor.duplicate() }
-      else if (key === 'r') editor.rotate()
-      else if (key === 'delete' || key === 'backspace') { event.preventDefault(); editor.remove() }
-      else if (key === ' ') { event.preventDefault(); if (!event.repeat) toggleRun() }
-      else if (key === 'escape') { editor.setTool('select'); editor.select([]) }
-      else if (key === 'w') editor.setTool('wire')
+    let cancelled = false
+    let openedRepo: WorkspaceRepository | null = null
+
+    async function init() {
+      const repo = await openWorkspaceRepository()
+      if (cancelled) {
+        repo.close()
+        return
+      }
+      openedRepo = repo
+      repoRef.current = repo
+      setStorageMode(repo.mode)
+      setSaveState(repo.mode === 'memory' ? 'memory' : 'saved')
+
+      await migrateLegacyCircuit(repo, {
+        defaultName: translate(readLanguage(), 'Recovered Circuit'),
+        defaultDescription: translate(readLanguage(), 'Migrated from previous local autosave.'),
+      })
+      if (cancelled) return
+
+      const snapshot = await refreshFromRepo(repo)
+      if (cancelled) return
+
+      const existingIds = new Set(snapshot.projects.map(project => project.id))
+      const restoredTabs = readOpenTabs().filter(id => existingIds.has(id))
+      const hashProjectId = readHashProjectId()
+
+      if (hashProjectId && existingIds.has(hashProjectId)) {
+        const tabs = restoredTabs.includes(hashProjectId) ? restoredTabs : [...restoredTabs, hashProjectId]
+        setOpenProjectIds(tabs)
+        setActiveProjectId(hashProjectId)
+        setScreen('editor')
+      } else {
+        if (hashProjectId) writeHashProjectId(null)
+        setOpenProjectIds(restoredTabs)
+        setActiveProjectId(restoredTabs[0] ?? null)
+        setScreen('hub')
+      }
+      setReady(true)
     }
-    window.addEventListener('keydown', keyboard)
-    return () => window.removeEventListener('keydown', keyboard)
-  })
-  useEffect(() => { saveBoardSettings(boardSettings) }, [boardSettings])
-  // Runs once the opened circuit has rendered; the view is not part of the circuit or its undo history.
-  useEffect(() => { editor.fit() }, [fitRequest])
-  function openCircuit(next: Circuit) {
-    setFitRequest(request => request + 1)
-    editor.replace(next); setRunning(true); setHeld(null); transient.reset(); setProbe('')
+
+    void init()
+    return () => {
+      cancelled = true
+      openedRepo?.close()
+      repoRef.current = null
+    }
+  }, [refreshFromRepo])
+
+  useEffect(() => {
+    if (!ready) return
+    saveOpenTabs(openProjectIds)
+  }, [openProjectIds, ready])
+
+  useEffect(() => {
+    const activeProject = activeProjectId ? projects.find(p => p.id === activeProjectId) : undefined
+    document.documentElement.lang = language
+    document.title = screen === 'editor' && activeProject
+      ? `${activeProject.name} — Meshlab`
+      : `Meshlab — ${translate(language, 'PROJECTS')}`
+    try { localStorage.setItem('meshlab:language', language) } catch { /* Storage is optional. */ }
+  }, [language, screen, activeProjectId, projects])
+
+  useEffect(() => {
+    const onBeforeUnload = () => { void flushPendingSaves() }
+    window.addEventListener('beforeunload', onBeforeUnload)
+    return () => window.removeEventListener('beforeunload', onBeforeUnload)
+  }, [flushPendingSaves])
+
+  const activeProject = activeProjectId ? projects.find(p => p.id === activeProjectId) ?? null : null
+
+  const openProjectById = useCallback(async (projectId: string) => {
+    await flushPendingSaves()
+    setOpenProjectIds(prev => prev.includes(projectId) ? prev : [...prev, projectId])
+    setActiveProjectId(projectId)
+    setScreen('editor')
+    writeHashProjectId(projectId)
+  }, [flushPendingSaves])
+
+  const backToHub = useCallback(async () => {
+    await flushPendingSaves()
+    setScreen('hub')
+    writeHashProjectId(null)
+  }, [flushPendingSaves])
+
+  const returnToEditor = useCallback(() => {
+    const targetId = (activeProjectId && projects.some(p => p.id === activeProjectId))
+      ? activeProjectId
+      : openProjectIds.find(id => projects.some(p => p.id === id)) ?? null
+    if (!targetId) return
+    setActiveProjectId(targetId)
+    setScreen('editor')
+    writeHashProjectId(targetId)
+  }, [activeProjectId, openProjectIds, projects])
+
+  const closeTab = useCallback(async (projectId: string) => {
+    await flushPendingSaves()
+    const remaining = openProjectIds.filter(id => id !== projectId)
+    setOpenProjectIds(remaining)
+    if (activeProjectId === projectId) {
+      const nextId = remaining.at(-1) ?? null
+      setActiveProjectId(nextId)
+      if (nextId) {
+        writeHashProjectId(nextId)
+      } else {
+        setScreen('hub')
+        writeHashProjectId(null)
+      }
+    }
+  }, [activeProjectId, flushPendingSaves, openProjectIds])
+
+  const handleCircuitChange = useCallback((projectId: string, nextCircuit: Circuit) => {
+    const now = Date.now()
+    const cloned = structuredClone(nextCircuit)
+    setProjects(prev => prev.map(project =>
+      project.id === projectId ? { ...project, circuit: cloned, updatedAt: now } : project,
+    ))
+    const repo = repoRef.current
+    if (!repo) return
+    pendingCountRef.current += 1
+    setSaveState('saving')
+    saveChainRef.current = saveChainRef.current
+      .then(() => repo.saveProjectCircuit(projectId, cloned))
+      .then(() => {
+        pendingCountRef.current = Math.max(0, pendingCountRef.current - 1)
+        if (pendingCountRef.current === 0) {
+          setSaveState(repo.mode === 'memory' ? 'memory' : 'saved')
+        }
+      })
+      .catch(() => {
+        pendingCountRef.current = Math.max(0, pendingCountRef.current - 1)
+        setSaveState('error')
+      })
+  }, [])
+
+  const handleViewModeChange = useCallback(async (projectId: string, preferredView: PreferredView) => {
+    const repo = repoRef.current
+    setProjects(prev => prev.map(project =>
+      project.id === projectId ? { ...project, preferredView } : project,
+    ))
+    if (!repo) return
+    try {
+      await repo.updateProject(projectId, { preferredView }, { touch: false })
+    } catch {
+      setSaveState('error')
+    }
+  }, [])
+
+  const handleCreateProject = useCallback(async (data: ProjectModalSubmit) => {
+    const repo = repoRef.current
+    if (!repo) return
+    await flushPendingSaves()
+    const created = await repo.createProject({
+      name: data.name,
+      description: data.description,
+      folderId: data.folderId,
+      tagIds: data.tagIds,
+      preferredView: data.preferredView,
+      circuit: data.circuit ?? blankCircuit(),
+    })
+    await refreshFromRepo(repo)
+    setOpenProjectIds(prev => [...prev, created.id])
+    setActiveProjectId(created.id)
+    setScreen('editor')
+    writeHashProjectId(created.id)
+  }, [flushPendingSaves, refreshFromRepo])
+
+  const handleQuickCreateBlank = useCallback(async () => {
+    await handleCreateProject({
+      name: t('Untitled Project'),
+      description: '',
+      folderId: null,
+      tagIds: [],
+      preferredView: 'schematic',
+      circuit: blankCircuit(),
+    })
+  }, [handleCreateProject, t])
+
+  const handleQuickTemplate = useCallback(async (templateName: string, folderId: string | null) => {
+    const circuit = examples[templateName]
+    if (!circuit) return
+    await handleCreateProject({
+      name: t(templateName),
+      description: '',
+      folderId,
+      tagIds: [],
+      preferredView: 'schematic',
+      circuit: structuredClone(circuit),
+    })
+  }, [handleCreateProject, t])
+
+  const handleUpdateProject = useCallback(async (id: string, data: ProjectModalSubmit) => {
+    const repo = repoRef.current
+    if (!repo) return
+    await flushPendingSaves()
+    await repo.updateProject(id, {
+      name: data.name,
+      description: data.description,
+      folderId: data.folderId,
+      tagIds: data.tagIds,
+      preferredView: data.preferredView,
+    })
+    await refreshFromRepo(repo)
+  }, [flushPendingSaves, refreshFromRepo])
+
+  const handleRenameProject = useCallback(async (id: string, name: string) => {
+    const repo = repoRef.current
+    if (!repo) return
+    await repo.updateProject(id, { name })
+    await refreshFromRepo(repo)
+  }, [refreshFromRepo])
+
+  const handleTogglePin = useCallback(async (project: Project) => {
+    const repo = repoRef.current
+    if (!repo) return
+    await repo.togglePin(project.id)
+    await refreshFromRepo(repo)
+  }, [refreshFromRepo])
+
+  const handleDuplicateProject = useCallback(async (project: Project) => {
+    const repo = repoRef.current
+    if (!repo) return
+    await flushPendingSaves()
+    await repo.duplicateProject(project.id, t('Copy'))
+    await refreshFromRepo(repo)
+    setHubNotice({ text: 'Project duplicated.' })
+  }, [flushPendingSaves, refreshFromRepo, t])
+
+  const handleDeleteProject = useCallback(async (project: Project) => {
+    const repo = repoRef.current
+    if (!repo) return
+    await flushPendingSaves()
+    await repo.deleteProject(project.id)
+    await refreshFromRepo(repo)
+    setOpenProjectIds(prev => prev.filter(id => id !== project.id))
+    if (activeProjectId === project.id) {
+      setActiveProjectId(null)
+      setScreen('hub')
+      writeHashProjectId(null)
+    }
+    setHubNotice({ text: 'Project deleted.' })
+  }, [activeProjectId, flushPendingSaves, refreshFromRepo])
+
+  const handleCreateFolder = useCallback(async (name: string, color: string) => {
+    const repo = repoRef.current
+    if (!repo) return
+    await repo.createFolder({ name, color })
+    await refreshFromRepo(repo)
+  }, [refreshFromRepo])
+
+  const handleUpdateFolder = useCallback(async (id: string, changes: { name?: string; color?: string }) => {
+    const repo = repoRef.current
+    if (!repo) return
+    await repo.updateFolder(id, changes)
+    await refreshFromRepo(repo)
+  }, [refreshFromRepo])
+
+  const handleDeleteFolder = useCallback(async (folder: Folder) => {
+    const repo = repoRef.current
+    if (!repo) return
+    await flushPendingSaves()
+    await repo.deleteFolder(folder.id)
+    await refreshFromRepo(repo)
+    setHubNotice({ text: 'Folder deleted.' })
+  }, [flushPendingSaves, refreshFromRepo])
+
+  const handleCreateTag = useCallback(async (name: string, color: string): Promise<Tag> => {
+    const repo = repoRef.current
+    if (!repo) throw new Error('Storage is not ready.')
+    const created = await repo.createTag({ name, color })
+    await refreshFromRepo(repo)
+    return created
+  }, [refreshFromRepo])
+
+  const handleUpdateTag = useCallback(async (id: string, changes: { name?: string; color?: string }) => {
+    const repo = repoRef.current
+    if (!repo) return
+    await repo.updateTag(id, changes)
+    await refreshFromRepo(repo)
+  }, [refreshFromRepo])
+
+  const handleDeleteTag = useCallback(async (tag: Tag) => {
+    const repo = repoRef.current
+    if (!repo) return
+    await flushPendingSaves()
+    await repo.deleteTag(tag.id)
+    await refreshFromRepo(repo)
+    setHubNotice({ text: 'Tag deleted.' })
+  }, [flushPendingSaves, refreshFromRepo])
+
+  const handleExportProject = useCallback((project: Project) => {
+    void flushPendingSaves()
+    downloadProjectFile(project, folders, tags)
+    setHubNotice({ text: 'Project exported.' })
+  }, [flushPendingSaves, folders, tags])
+
+  const handleExportBackup = useCallback(() => {
+    void flushPendingSaves()
+    downloadWorkspaceBundle({ projects, folders, tags })
+    setHubNotice({ text: 'Backup exported.' })
+  }, [flushPendingSaves, projects, folders, tags])
+
+  const handleExportFolder = useCallback((folder: Folder) => {
+    void flushPendingSaves()
+    downloadWorkspaceBundle({ projects, folders, tags }, { folderId: folder.id, folderName: folder.name })
+    setHubNotice({ text: 'Folder backup exported.' })
+  }, [flushPendingSaves, projects, folders, tags])
+
+  const handleImportFile = useCallback(async (file: File) => {
+    const repo = repoRef.current
+    if (!repo) return
+    try {
+      await flushPendingSaves()
+      const result = await importAnyJson(repo, file, { defaultName: t('Untitled Project') })
+      await refreshFromRepo(repo)
+      setHubNotice({
+        text: result.kind === 'meshlab-bundle'
+          ? 'Backup imported.'
+          : result.kind === 'meshlab-project'
+            ? 'Project imported.'
+            : 'Circuit imported.',
+      })
+    } catch (error) {
+      setHubNotice({
+        text: error instanceof Error ? error.message : 'The operation failed.',
+        error: true,
+      })
+    }
+  }, [flushPendingSaves, refreshFromRepo, t])
+
+  if (!ready) {
+    return <div className="hub" aria-busy="true" />
   }
-  function chooseExample(name: string | null) {
-    if (name && examples[name]) { openCircuit(examples[name]); setMessage(''); setMenuOpen(false) }
+
+  if (screen === 'editor' && activeProject) {
+    return (
+      <>
+        <Workbench
+          key={activeProject.id}
+          project={activeProject}
+          projects={projects}
+          folders={folders}
+          tags={tags}
+          openProjectIds={openProjectIds}
+          saveState={saveState}
+          storageMode={storageMode}
+          language={language}
+          preference={preference}
+          theme={theme}
+          t={t}
+          onLanguageChange={setLanguage}
+          onThemeChange={setPreference}
+          onCircuitChange={handleCircuitChange}
+          onViewModeChange={(id, view) => void handleViewModeChange(id, view)}
+          onBackToHub={() => void backToHub()}
+          onSelectTab={id => void openProjectById(id)}
+          onCloseTab={id => void closeTab(id)}
+          onOpenProject={id => void openProjectById(id)}
+          onQuickCreateBlank={() => void handleQuickCreateBlank()}
+          onOpenNewProjectModal={() => setEditorModal({ mode: 'create' })}
+          onRenameProject={handleRenameProject}
+          onEditProjectDetails={proj => setEditorModal({ mode: 'edit', project: proj })}
+          onImportBundleFile={handleImportFile}
+        />
+        <ProjectModal
+          open={Boolean(editorModal)}
+          mode={editorModal?.mode ?? 'create'}
+          initialProject={editorModal?.mode === 'edit' ? editorModal.project : undefined}
+          folders={folders}
+          tags={tags}
+          palette={palette}
+          t={t}
+          onCreateTag={handleCreateTag}
+          onSubmit={async data => {
+            const current = editorModal
+            setEditorModal(null)
+            if (current?.mode === 'edit') {
+              await handleUpdateProject(current.project.id, data)
+            } else {
+              await handleCreateProject(data)
+            }
+          }}
+          onClose={() => setEditorModal(null)}
+        />
+      </>
+    )
   }
-  function newCircuit() { openCircuit(blank); setMessage(''); setMenuOpen(false) }
-  function importFile() { setMenuOpen(false); file.current?.click() }
-  function exportAs(kind: 'JSON' | 'PNG') {
-    setMenuOpen(false)
-    return kind === 'JSON' ? handleIo(() => exportJson(editor.circuit), 'JSON exported.') : handleIo(exportImage, 'PNG exported.')
-  }
-  async function handleIo(action: () => void | Promise<void>, success: string) {
-    try { await action(); setImportError(false); setMessage(success) }
-    catch (error) { setImportError(true); setMessage(error instanceof Error ? error.message : 'The operation failed.') }
-  }
-  function exportImage() {
-    const svg = editor.svg.current
-    if (!svg) return
-    // The on-screen view box grows with the window; the PNG keeps the 800 × 540 drawing frame.
-    const copy = svg.cloneNode(true) as SVGSVGElement
-    copy.setAttribute('viewBox', '0 0 800 540')
-    return exportPng(copy, editor.view)
-  }
 
-  const content: Record<PanelId, ReactNode> = {
-    library: <>
-      <div className="library-search"><Search size={15} /><Input type="search" aria-label={t('Find components')} placeholder={t('Find components')} value={query} onChange={event => setQuery(event.target.value)} /></div>
-      <div className="library-content">
-        {!matches.length && <p className="panel-empty">{t('No matching components.')}</p>}
-        {groups.filter(group => matches.some(kind => catalog[kind].group === group)).map(group => <section key={group}>
-          <h3 className="section-label">{t(group)}</h3>
-          {matches.filter(kind => catalog[kind].group === group).map(kind => <Button key={kind} variant="ghost" className="library-part" onClick={() => editor.add(kind)}>
-            <span className="part-icon"><svg viewBox="-42 -27 84 54" aria-hidden="true"><Symbol kind={kind} /></svg></span>
-            <span>{t(catalog[kind].name)}</span><Plus className="add-icon" />
-          </Button>)}
-        </section>)}
-      </div>
-    </>,
-    inspector: <div className="inspector-body">
-      {inspected ? <Properties t={t} key={inspected.id} part={inspected} update={(changes, preview) => editor.update(inspected, changes, preview)} /> :
-        <div className="empty-state"><span className="empty-state-icon"><MousePointer2 size={16} /></span><strong>{wire ? t('Wire selected') : editor.selected.length ? `${editor.selected.length} ${t('items selected')}` : t('Nothing selected')}</strong>
-          <small>{wire ? `${t('Current')}: ${metric(flows[wire.id], 'A')}` : t('Select a component to edit its parameters.')}</small></div>}
-      {inspected && <div className="measurements"><Reading label={t('Voltage drop')} value={metric(read?.voltage, 'V')} /><Reading label={t('Current')} value={metric(inspected.kind === 'ground' ? grounds[inspected.id] : read?.current, 'A')} /><Reading label={t('Power')} value={metric(read?.power, 'W')} /></div>}
-    </div>,
-    display: <div className="display-body">
-      <section className="panel-section">
-        <h3 className="section-label">{t('Canvas overlays')}</h3>
-        <Setting label={t('Node voltages')} checked={showNodes} onChange={setShowNodes} />
-        <Setting label={t('Voltage colors')} checked={showVoltage} onChange={setShowVoltage} />
-        <Setting label={t('Ground returns')} checked={showGround} onChange={setShowGround} />
-        <Setting label={t('Electron flow')} checked={reverse} onChange={setReverse} />
-        <div className="speed"><div><label htmlFor="flow-speed">{t('Animation speed')}</label><span>{speed.toLocaleString(language, { minimumFractionDigits: 1, maximumFractionDigits: 1 })}×</span></div>
-          <Slider id="flow-speed" value={[speed]} min={.2} max={3} step={.1} onValueChange={v => setSpeed(one(v))} /></div>
-      </section>
-      <section className="panel-section key-guide"><h3 className="section-label">{t('Shortcuts')}</h3><span><kbd>R</kbd> {t('Rotate')}</span><span><kbd>{language === 'es' ? 'Supr' : 'Del'}</kbd> {t('Delete')}</span><span><kbd>{language === 'es' ? 'Espacio' : 'Space'}</kbd> {t('Play / pause')}</span><span><kbd>Esc</kbd> {t('Cancel')}</span></section>
-    </div>,
-    board: <BoardSettingsPanel t={t} value={boardSettings} onChange={setBoardSettings} />,
-    results: <>
-      <div className="result-summary"><Reading label={t('Nodes')} value={String(Object.keys(valid?.nodes ?? {}).length)} /><Reading label={t('Power delivered')} value={valid ? metric(delivered, 'W') : '—'} />
-        <Reading label={t('Power absorbed')} value={valid ? metric(delivered + valid.balance, 'W') : '—'} /><Reading label={t('Residual')} value={valid ? metric(valid.balance, 'W') : '—'} /></div>
-      {!valid || !hasCircuit ? <div className="empty-state result-empty"><strong>{t('Reading unavailable')}</strong>
-        <small>{t(!hasCircuit ? 'Add components or load an example.' : pendingSample ? 'Awaiting a transient sample' : 'No solution')}</small></div> : <div className="tables">
-        <table><caption className="section-label">{t('Component readings')}</caption><thead><tr><th>{t('Branch')}</th><th>ΔV</th><th>{t('Current')}</th><th>{t('Power')}</th></tr></thead>
-          <tbody>{Object.entries(valid?.branches ?? {}).map(([id, r]) => <tr key={id}><th scope="row">{active.circuit.components.find(c => c.id === id)?.label ?? id}</th><td>{metric(r.voltage, 'V')}</td><td>{metric(r.current, 'A')}</td><td>{metric(r.power, 'W')}</td></tr>)}</tbody></table>
-        <table><caption className="section-label">{t('Node potentials')}</caption><thead><tr><th>{t('Node')}</th><th>{t('Voltage')}</th></tr></thead><tbody>{Object.entries(valid?.nodes ?? {}).map(([node, volts]) => <tr key={node}><th scope="row">{node === '0' ? 'GND' : node}</th><td>{metric(volts, 'V')}</td></tr>)}</tbody></table>
-      </div>}
-    </>,
-    scope: <Scope t={t} palette={palette} samples={transient.samples} time={transient.time} parts={probeParts} probe={activeProbe} onProbe={setProbe} reset={transient.reset} />,
-  }
-  const renderPanel = ({ id, label, title, icon }: typeof panelMeta[number]) => <Panel key={id} id={id} side={panelSides[id]} title={t(title)} icon={icon}
-    pinned={docked(id)} pinnable={panels.canPin(id)} pinLabel={t(`Pin ${label}`)} closeLabel={t(`Close ${label}`)}
-    pinTip={t('Pin panel')} unpinTip={t('Unpin panel')} onPin={pinned => panels.setPinned(id, pinned)} onClose={() => panels.setOpen(id, false)}
-    className={`panel-${id}`}>{content[id]}</Panel>
-  const notice = fault || valid?.warnings.length || alerts.length || message || editor.storageError
-
-  const examplesSelect = <Select items={Object.fromEntries(exampleNames.map(n => [n, t(n)]))} value={null} onValueChange={chooseExample}>
-    <SelectTrigger className="examples-trigger" aria-label={t('Circuit examples')}><SelectValue placeholder={t('Load an example')} /></SelectTrigger>
-    <SelectContent>{exampleNames.map(name => <SelectItem value={name} key={name}>{t(name)}</SelectItem>)}</SelectContent>
-  </Select>
-  const fileButtons = (size: 'sm' | 'default') => <>
-    <Button variant="ghost" size={size} onClick={newCircuit}><Plus /><Label>{t('New')}</Label></Button>
-    <Button variant="ghost" size={size} onClick={importFile}><Upload /><Label>{t('Import')}</Label></Button>
-    <div className="export-group" role="group" aria-label={t('Export')}>
-      <Button variant="ghost" size={size} onClick={() => exportAs('JSON')}><ArrowDownToLine /> JSON</Button>
-      <Button variant="ghost" size={size} onClick={() => exportAs('PNG')}><ArrowDownToLine /> PNG</Button>
-    </div>
-  </>
-  const themeSwitch = <ThemeSwitch value={preference} onChange={setPreference} t={t} />
-  const languageSelect = <Select items={{ en: 'English', es: 'Español' }} value={language} onValueChange={value => { if (value === 'en' || value === 'es') { setLanguage(value); setQuery('') } }}>
-    <SelectTrigger className="locale-trigger" aria-label={t('Language')}><Languages size={15} /><SelectValue /></SelectTrigger>
-    <SelectContent><SelectItem value="en" lang="en">English</SelectItem><SelectItem value="es" lang="es">Español</SelectItem></SelectContent>
-  </Select>
-  const tool = (label: string, icon: ReactNode, onClick: () => void, options: { pressed?: boolean; disabled?: boolean } = {}) =>
-    <IconTool side="bottom" label={t(label)} pressed={options.pressed} disabled={options.disabled} onClick={onClick}>{icon}</IconTool>
-  const clipboardTools = <>
-    {tool('Copy selection', <Copy />, editor.copy, { disabled: !editor.canCopy })}
-    {tool('Paste', <ClipboardPaste />, () => editor.paste(), { disabled: !editor.canPaste })}
-    {tool('Duplicate selection', <CopyPlus />, editor.duplicate, { disabled: !editor.canCopy })}
-  </>
-  const zoomTools = <>
-    {tool('Zoom out', <Minus />, () => editor.zoom(1 / 1.2))}
-    <span className="zoom-level">{Math.round(editor.view.scale * 100)}%</span>
-    {tool('Zoom in', <Plus />, () => editor.zoom(1.2))}
-  </>
-
-  return <TooltipProvider>
-    <div className="workbench" data-view={viewMode} data-tier={panels.tier} data-compact={panels.compact}
-      data-dock-left={dock.left} data-dock-right={dock.right} data-dock-bottom={dock.bottom} data-sheet-open={panels.compact && shown.length > 0}>
-      <header className="topbar">
-        <div className="brand"><div className="brand-icon"><CircuitBoard size={17} /></div><div className="brand-text"><strong>Meshlab<span>.</span></strong><small>{t('DC CIRCUIT WORKBENCH')}</small></div></div>
-        <div className="segmented view-switch" role="group" aria-label={t('Circuit view')}>
-          <Button size="sm" variant="ghost" aria-pressed={schematic} onClick={() => setViewMode('schematic')}><Waypoints />{t('Schematic')}</Button>
-          <Button size="sm" variant="ghost" aria-pressed={!schematic} onClick={() => { setBoardOpened(true); setViewMode('board') }}><CircuitBoard />{t('Breadboard')}</Button>
-        </div>
-        <Badge variant="outline" className={`state ${fault ? 'state-fault' : running && hasCircuit ? 'state-live' : 'state-idle'}`}><i />{fault ? t('CHECK CIRCUIT') : !hasCircuit ? t('EMPTY') : running ? t(transient.enabled ? 'TRANSIENT LIVE' : 'LIVE DC') : t('PAUSED')}</Badge>
-        {wide && <div className="file-actions">
-          {examplesSelect}
-          {fileButtons('sm')}
-          <span className="topbar-divider" aria-hidden="true" />
-          {themeSwitch}
-          {languageSelect}
-        </div>}
-        <Button className="run-button" data-running={running} onClick={toggleRun}>{running ? <Pause /> : <Play />}<Label>{running ? t('Pause') : t('Run simulation')}</Label></Button>
-        {!wide && <Popover open={menuOpen} onOpenChange={setMenuOpen}>
-          <PopoverTrigger render={<Button variant="ghost" size="icon" className="more-trigger" aria-label={t('More actions')} />}><Ellipsis /></PopoverTrigger>
-          <PopoverContent className="more-menu" aria-label={t('More actions')}>
-            <section className="more-section">
-              <h3 className="section-label">{t('Circuit file')}</h3>
-              {examplesSelect}
-              <div className="more-grid">{fileButtons('default')}</div>
-            </section>
-            <section className="more-section">
-              <h3 className="section-label">{t('Appearance')}</h3>
-              <div className="more-row"><span>{t('Theme')}</span>{themeSwitch}</div>
-              <div className="more-row"><span>{t('Language')}</span>{languageSelect}</div>
-            </section>
-          </PopoverContent>
-        </Popover>}
-        <input type="file" accept=".json,application/json" hidden ref={file} onChange={event => {
-          const chosen = event.target.files?.[0]; event.target.value = ''
-          if (chosen) void handleIo(async () => { openCircuit(await importJson(chosen)) }, 'Circuit imported.')
-        }} />
-      </header>
-
-      {placed('left', true).length > 0 && <aside className="dock dock-left">{placed('left', true).map(renderPanel)}</aside>}
-
-      <main className="stage" ref={stage}>
-        <h1 className="sr-only">{t(schematic ? 'Circuit canvas' : 'Breadboard')}</h1>
-        <div className="editor" hidden={!schematic}>
-          <Canvas t={t} palette={palette} svg={editor.svg} circuit={editor.drawn} view={editor.view} selected={editor.selected} flagged={flagged}
-            pins={active.net.nodeByPin} nodes={valid?.nodes ?? {}} readings={valid?.branches ?? {}} flows={flows} grounds={grounds}
-            mode={editor.mode} cursor={editor.cursor} wireFrom={editor.wireFrom} running={running} speed={speed} reverse={reverse}
-            showGround={showGround} showNodes={showNodes} showVoltage={showVoltage} onBackground={editor.backgroundDown}
-            onComponent={editor.componentDown} onEndpoint={editor.endpointDown} onWire={editor.wireDown} onRoute={editor.routeDown}
-            onMove={editor.move} onUp={editor.up} box={editor.box} inset={insets} />
-          {!hasCircuit && <div className="canvas-empty" style={{ paddingTop: insets.top, paddingBottom: insets.bottom, paddingLeft: insets.left, paddingRight: insets.right }}>
-            <span className="canvas-empty-icon"><CircuitBoard /></span><strong>{t('Start a new circuit')}</strong><span>{t('Add components or load an example.')}</span></div>}
-        </div>
-        {boardOpened && <div className="editor" hidden={schematic}>
-          <Suspense fallback={<div className="board-loading" role="status">{t('Loading breadboard…')}</div>}>
-            <Board t={t} theme={theme} guide={guide} settings={boardSettings} circuit={editor.circuit} pins={active.net.nodeByPin} readings={valid?.nodes} currents={currents}
-              selected={editor.selected} onSelect={editor.select} onToggle={part => editor.update(part, { closed: !part.closed })}
-              onLoad={chooseExample} insets={schematic ? undefined : insets} />
-          </Suspense>
-        </div>}
-
-        <div className="hud-top">
-          {schematic && <div className="toolbar" role="group" aria-label={t('SCHEMATIC TOOLS')}>
-            <div className="tool-group">
-              {tool('Select and move', <MousePointer2 />, () => editor.setTool('select'), { pressed: editor.mode === 'select' })}
-              {tool('Wire (W)', <Waypoints />, () => editor.setTool('wire'), { pressed: editor.mode === 'wire' })}
-              {tool('Pan', <Hand />, () => editor.setTool('pan'), { pressed: editor.mode === 'pan' })}
-            </div>
-            <div className="tool-group">
-              {tool('Undo', <Undo2 />, () => editor.history(false), { disabled: !editor.canUndo })}
-              {tool('Redo', <Redo2 />, () => editor.history(true), { disabled: !editor.canRedo })}
-              {tool('Rotate (R)', <RotateCw />, editor.rotate, { disabled: !editor.selected.length })}
-              {tool('Delete (Del)', <Trash2 />, editor.remove, { disabled: !editor.selected.length })}
-            </div>
-            <div className="tool-group tools-extra">{clipboardTools}</div>
-            <div className="tool-group">
-              <span className="tools-extra">{zoomTools}</span>
-              {tool('Fit to circuit', <Crosshair />, editor.fit)}
-              {/* Narrow stages keep the less frequent tools in an overflow so the toolbar never scrolls sideways. */}
-              <span className="tools-more"><Popover>
-                <PopoverTrigger render={<Button variant="ghost" size="icon-sm" className="tool" aria-label={t('More tools')} />}><EllipsisVertical /></PopoverTrigger>
-                <PopoverContent className="tools-menu" align="end" aria-label={t('More tools')}>
-                  <div className="tool-group">{clipboardTools}</div>
-                  <div className="tool-group">{zoomTools}</div>
-                </PopoverContent>
-              </Popover></span>
-            </div>
-          </div>}
-          {notice ? <div role={fault || importError ? 'alert' : 'status'} className={fault || importError || valid?.warnings.length || alerts.length ? 'notice warning' : 'notice'}>
-            {fault && <div className="diagnostic-row"><span>{diagnostic(language, fault)}</span>{faultIds.length > 0 && <Button size="xs" variant="outline" onClick={() => editor.reveal(faultIds)}>{t('Locate')}</Button>}</div>}
-            {alerts.map(alert => {
-              const unit = alert.quantity === 'current' ? 'A' : 'W'
-              const label = active.circuit.components.find(c => c.id === alert.id)?.label ?? alert.id
-              return <div key={`${alert.id}:${alert.quantity}`} className="diagnostic-row">
-                <span><strong>{label}</strong> · {t(alert.quantity === 'current' ? 'Overcurrent' : 'Power limit exceeded')}: {metric(alert.actual, unit)} ({t('Limit')}: {metric(alert.limit, unit)})</span>
-                <Button size="xs" variant="outline" onClick={() => editor.reveal([alert.id])}>{t('Locate')}</Button>
-              </div>
-            })}{warnings.map(({ message, ids }) => <div key={message} className="diagnostic-row">
-              <span>{diagnostic(language, message)}</span>
-              {ids.length > 0 && <Button size="xs" variant="outline" onClick={() => editor.reveal(ids)}>{t('Locate')}</Button>}
-            </div>)}{message && <div>{importError ? diagnostic(language, message, true) : t(message)}</div>}
-            {editor.storageError && <div>{t('Autosave is unavailable in this browser.')}</div>}
-          </div> : null}
-        </div>
-
-        <div className="launcher-host">
-          <Launcher label={t('Panels')} compact={panels.compact} onToggle={panels.toggle}
-            items={panelMeta.filter(panel => available(panel.id)).map(({ id, label, icon }) => ({ id, label: t(label), icon, open: panels.layout[id].open }))} />
-        </div>
-        {placed('left', false).length > 0 && <div className="float float-left">{placed('left', false).map(renderPanel)}</div>}
-        {placed('right', false).length > 0 && <div className="float float-right">{placed('right', false).map(renderPanel)}</div>}
-        {placed('bottom', false).length > 0 && <div className="float float-bottom">{placed('bottom', false).map(renderPanel)}</div>}
-
-        {schematic && <div className="statusbar">
-          <span className="status-hint"><i />{editor.wireFrom ? t('Select a terminal or wire to connect') : editor.mode === 'wire' ? t('Start at a terminal or wire') : wire ? t('Drag a wire handle to reroute') : t('Click a terminal to start wiring')}</span>
-          <span className="status-meta">{editor.circuit.components.length} {t('parts')} · {editor.circuit.wires.length} {t('wires')}</span>
-          <span className="status-meta status-save">{editor.storageError ? t('Autosave unavailable') : <><CircleCheck size={12} />{t('Local autosave enabled')}</>}</span>
-          <span className="status-meta status-engine"><Activity size={12} />{t('Modified nodal analysis')}</span>
-        </div>}
-      </main>
-
-      {placed('right', true).length > 0 && <aside className="dock dock-right">{placed('right', true).map(renderPanel)}</aside>}
-      {placed('bottom', true).length > 0 && <section className="dock dock-bottom" aria-label={t('Pinned sheets')}>{placed('bottom', true).map(renderPanel)}</section>}
-    </div>
-  </TooltipProvider>
-}
-
-function Properties({ part, update, t }: { t: Translate; part: Component; update: (changes: Partial<Component>, preview?: boolean) => void }) {
-  const meta = catalog[part.kind]
-  const [label, setLabel] = useState(part.label)
-  const [draft, setDraft] = useState(metric(part.value, meta.unit))
-  const [invalid, setInvalid] = useState(false)
-  const [liveValue, setLiveValue] = useState<number>()
-  const [livePosition, setLivePosition] = useState<number>()
-  useEffect(() => { setDraft(metric(part.value, meta.unit)) }, [part.value, meta.unit])
-  useEffect(() => { setLabel(part.label) }, [part.label])
-  const signed = part.kind === 'voltage' || part.kind === 'current'
-  function setValue() {
-    const number = parseMetric(draft, meta.unit)
-    if (!Number.isFinite(number) || (!signed && number <= 0)) { setInvalid(true); return }
-    setInvalid(false)
-    update({ value: number })
-    setDraft(metric(number, meta.unit))
-  }
-  function onValue(value: number, preview: boolean) {
-    const next = signed ? value : Math.max(extent / 1000, value)
-    setLiveValue(preview ? value : undefined)
-    setDraft(metric(next, meta.unit))
-    setInvalid(false)
-    update({ value: next }, preview)
-  }
-  function onPosition(position: number, preview: boolean) {
-    setLivePosition(preview ? position : undefined)
-    update({ position }, preview)
-  }
-  const extent = Math.max(Math.abs(meta.value) * 10, Math.abs(part.value), .001)
-  return <div className="properties">
-    <div className="part-heading"><span className="part-icon"><svg viewBox="-42 -27 84 54" aria-hidden="true"><Symbol kind={part.kind} closed={part.closed} /></svg></span><strong>{t(meta.name)}</strong></div>
-    <label className="field">{t('Label')}<Input value={label} maxLength={40} onChange={e => setLabel(e.target.value)} onBlur={() => { if (label.trim()) update({ label: label.trim() }); else setLabel(part.label) }} onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur() }} /></label>
-    {meta.unit && <>
-      <label className="field">{t('Value')}<Input value={draft} aria-invalid={invalid} onChange={e => { setDraft(e.target.value); setInvalid(false) }} onBlur={setValue} onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur() }} /></label>
-      {invalid && <small className="form-error">{t(signed ? 'Enter a valid value in' : 'Enter a positive value in')} {meta.unit}.</small>}
-      <Slider aria-label={t('Component value')} min={signed ? -extent : 0} max={extent} step={extent / 1000} value={[liveValue ?? part.value]}
-        onValueChange={v => onValue(one(v), true)} onValueCommitted={v => onValue(one(v), false)} />
-    </>}
-    {part.kind === 'potentiometer' && <div className="speed"><div><span>{t('Wiper')}</span><span>{Math.round((livePosition ?? part.position ?? .5) * 100)}%</span></div>
-      <Slider aria-label={t('Wiper position')} min={0} max={1} step={.01} value={[livePosition ?? part.position ?? .5]} onValueChange={v => onPosition(one(v), true)} onValueCommitted={v => onPosition(one(v), false)} /></div>}
-    {part.kind !== 'ground' && <details className="ratings">
-      <summary>{t('Electrical limits')}</summary>
-      <RatingField label={t('Current limit')} unit="A" value={currentLimit(part)} t={t} commit={maxCurrent => update({ maxCurrent })} />
-      <RatingField label={t('Power limit')} unit="W" value={part.maxPower ?? 0} t={t} commit={maxPower => update({ maxPower })} />
-      <small>{t('Set 0 to disable a limit.')}</small>
-    </details>}
-    {part.kind === 'switch' && <Setting label={t('Switch closed')} checked={!!part.closed} onChange={closed => update({ closed })} />}
-  </div>
-}
-
-function RatingField({ label, unit, value, t, commit }: { label: string; unit: string; value: number; t: Translate; commit: (value: number) => void }) {
-  const [draft, setDraft] = useState(metric(value, unit))
-  const [invalid, setInvalid] = useState(false)
-  useEffect(() => { setDraft(metric(value, unit)); setInvalid(false) }, [value, unit])
-  function finish() {
-    const parsed = parseMetric(draft, unit)
-    if (!Number.isFinite(parsed) || parsed < 0) { setInvalid(true); return }
-    setDraft(metric(parsed, unit))
-    if (parsed !== value) commit(parsed)
-  }
-  return <label className="field">{label}
-    <Input value={draft} aria-invalid={invalid} onChange={event => { setDraft(event.target.value); setInvalid(false) }}
-      onBlur={finish} onKeyDown={event => { if (event.key === 'Enter') event.currentTarget.blur() }} />
-    {invalid && <span className="form-error">{t('Enter a nonnegative limit.')}</span>}
-  </label>
+  return (
+    <ProjectsHub
+      projects={projects}
+      folders={folders}
+      tags={tags}
+      openProjectIds={openProjectIds}
+      storageMode={storageMode}
+      language={language}
+      preference={preference}
+      palette={palette}
+      t={t}
+      notice={hubNotice}
+      onDismissNotice={() => setHubNotice(null)}
+      onLanguageChange={setLanguage}
+      onThemeChange={setPreference}
+      onOpenProject={project => void openProjectById(project.id)}
+      onReturnToEditor={returnToEditor}
+      onCreateProject={handleCreateProject}
+      onUpdateProject={handleUpdateProject}
+      onRenameProject={(project, name) => handleRenameProject(project.id, name)}
+      onTogglePin={handleTogglePin}
+      onDuplicateProject={handleDuplicateProject}
+      onDeleteProject={handleDeleteProject}
+      onExportProject={handleExportProject}
+      onExportBackup={handleExportBackup}
+      onExportFolder={handleExportFolder}
+      onImportFile={handleImportFile}
+      onCreateFolder={handleCreateFolder}
+      onUpdateFolder={handleUpdateFolder}
+      onDeleteFolder={handleDeleteFolder}
+      onCreateTag={handleCreateTag}
+      onUpdateTag={handleUpdateTag}
+      onDeleteTag={handleDeleteTag}
+      onQuickTemplate={handleQuickTemplate}
+    />
+  )
 }

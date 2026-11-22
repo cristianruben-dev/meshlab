@@ -15,8 +15,14 @@ type Gesture =
   | { kind: 'route'; start: Point; wire: Wire; index: number; circuit: Circuit }
   | { kind: 'box'; start: Point; additive: boolean }
 
-export function useEditor(fallback: Circuit) {
-  const [circuit, setCircuit] = useState(() => loadCircuit(fallback))
+export type EditorOptions = {
+  onCircuitChange?: (circuit: Circuit) => void
+  externalStorageError?: boolean
+}
+
+export function useEditor(fallback: Circuit, options: EditorOptions = {}) {
+  const managed = options.onCircuitChange !== undefined
+  const [circuit, setCircuit] = useState(() => managed ? fallback : loadCircuit(fallback))
   const [clipboard, setClipboard] = useState<Circuit | null>(null)
   const [selected, setSelected] = useState<string[]>([])
   const [mode, setMode] = useState<'select' | 'wire' | 'pan'>('select')
@@ -29,14 +35,24 @@ export function useEditor(fallback: Circuit) {
   const [box, setBox] = useState<{ start: Point; end: Point } | null>(null)
   const [past, setPast] = useState<Circuit[]>([])
   const [future, setFuture] = useState<Circuit[]>([])
-  const [storageError, setStorageError] = useState(false)
+  const [localStorageError, setLocalStorageError] = useState(false)
   const svg = useRef<SVGSVGElement>(null)
   const gesture = useRef<Gesture | null>(null)
+  const onChangeRef = useRef(options.onCircuitChange)
+  onChangeRef.current = options.onCircuitChange
 
   useEffect(() => {
-    try { saveCircuit(circuit); setStorageError(false) }
-    catch { setStorageError(true) }
-  }, [circuit])
+    if (managed) return
+    try { saveCircuit(circuit); setLocalStorageError(false) }
+    catch { setLocalStorageError(true) }
+  }, [circuit, managed])
+
+  const storageError = managed ? Boolean(options.externalStorageError) : localStorageError
+
+  function applyCircuit(next: Circuit) {
+    setCircuit(next)
+    onChangeRef.current?.(next)
+  }
 
   function svgPoint(event: Pick<ReactPointerEvent, 'clientX' | 'clientY'>): Point {
     const matrix = svg.current?.getScreenCTM()
@@ -69,7 +85,7 @@ export function useEditor(fallback: Circuit) {
     setPropertyPreview(null)
     setPast(previous => [...previous.slice(-99), circuit])
     setFuture([])
-    setCircuit(next)
+    applyCircuit(next)
   }
   function clearTransient() {
     setWireFrom(null); setWireDraft(null); setCursor(null); setGestureView(null); setPropertyPreview(null); setBox(null); gesture.current = null
@@ -82,7 +98,7 @@ export function useEditor(fallback: Circuit) {
     setSelected([]); clearTransient()
     if (redo) { setFuture(future.slice(0, -1)); setPast([...past, circuit]) }
     else { setPast(past.slice(0, -1)); setFuture([...future, circuit]) }
-    setCircuit(next)
+    applyCircuit(next)
   }
   function replace(next: Circuit) {
     commit(next); setSelected([]); setView(initialView); setTool('select')

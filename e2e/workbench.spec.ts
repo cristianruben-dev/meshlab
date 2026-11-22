@@ -29,6 +29,8 @@ async function downloadFile(page: Page, button: 'JSON' | 'PNG', filename: string
 
 test.beforeEach(async ({ page }) => {
   await page.goto('/')
+  await expect(page.getByRole('heading', { name: 'My Projects' })).toBeVisible()
+  await page.getByRole('button', { name: /Voltage Divider/ }).click()
   await expect(schematic(page)).toBeVisible()
 })
 

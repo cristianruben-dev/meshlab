@@ -13,6 +13,13 @@ async function openBoard(page: Page, { settings, circuit, language }: { settings
     if (language) localStorage.setItem('meshlab:language', language)
   }, [settings && JSON.stringify(settings), circuit && JSON.stringify(examples[circuit]), language] as const)
   await page.goto('/')
+  const heading = language === 'es' ? 'Mis Proyectos' : 'My Projects'
+  await expect(page.getByRole('heading', { name: heading })).toBeVisible()
+  if (circuit) {
+    await page.getByRole('button', { name: language === 'es' ? 'Circuito recuperado' : 'Recovered Circuit', exact: true }).click()
+  } else {
+    await page.getByRole('button', { name: language === 'es' ? /Divisor de tensión/ : /Voltage Divider/ }).click()
+  }
   await page.getByRole('button', { name: language === 'es' ? 'Protoboard' : 'Breadboard', exact: true }).click()
 }
 
