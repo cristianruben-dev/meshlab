@@ -40,6 +40,24 @@ describe('circuit workbench', () => {
     } finally { vi.useRealTimers() }
   })
 
+  it('switches light and dark themes, persists the choice, and repaints the schematic', () => {
+    localStorage.setItem('meshlab:theme', 'light')
+    const { container } = render(<App />)
+    const background = () => container.querySelector('svg.schematic > rect')!.getAttribute('fill')
+    expect(document.documentElement.classList.contains('dark')).toBe(false)
+    const light = background()
+    const themes = within(screen.getByRole('group', { name: 'Theme' }))
+    expect(themes.getByRole('button', { name: 'Light theme' }).getAttribute('aria-pressed')).toBe('true')
+    fireEvent.click(themes.getByRole('button', { name: 'Dark theme' }))
+    expect(document.documentElement.classList.contains('dark')).toBe(true)
+    expect(localStorage.getItem('meshlab:theme')).toBe('dark')
+    expect(background()).not.toBe(light)
+    fireEvent.click(themes.getByRole('button', { name: 'System theme' }))
+    expect(localStorage.getItem('meshlab:theme')).toBeNull()
+    const branches = within(screen.getByRole('table', { name: 'Component readings' }))
+    expect(branches.getAllByText('4 mA')).toHaveLength(2)
+  })
+
   it('filters the component library by name and restores all options when cleared', () => {
     render(<App />)
     const search = screen.getByRole('searchbox', { name: 'Find components' })

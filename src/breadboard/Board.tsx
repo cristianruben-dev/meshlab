@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button'
 import type { Circuit, Component } from '../circuit/model'
 import { metric } from '../editor/catalog'
 import type { Translate } from '../locale'
+import type { Theme } from '../theme'
 import { COLUMNS, ROWS, boardGuides, holeGroup, populated, probeNode, validateStep, verifyBoard,
   type Assembly, type BoardStep, type Guide, type PlacementIssue } from './model'
 import './board.css'
@@ -22,6 +23,7 @@ const feedback: Record<PlacementIssue, string> = {
 
 type Props = {
   circuit: Circuit
+  theme: Theme
   guide?: Guide
   t: Translate
   pins: Record<string, string>
@@ -137,7 +139,7 @@ function GuidedBoard({ guide, circuit, t, pins, readings, currents, selected, on
   return <div className="breadboard">
     <div className="board-top">
       <div className="board-kicker"><span><CircuitBoard size={16} /></span><div><strong>{t(guide.example)}</strong><small>{t('20 columns · 4 isolated power rails')}</small></div></div>
-      <div className="board-modes" role="group" aria-label={t('Breadboard mode')}>
+      <div className="segmented board-modes" role="group" aria-label={t('Breadboard mode')}>
         <Button size="sm" variant={mode === 'preview' ? 'secondary' : 'ghost'} aria-pressed={mode === 'preview'} onClick={() => switchMode('preview')}><Crosshair />{t('Assembled')}</Button>
         <Button size="sm" variant={mode === 'build' ? 'secondary' : 'ghost'} aria-pressed={mode === 'build'} onClick={() => switchMode('build')}><ListChecks />{t('Guided build')}</Button>
       </div>

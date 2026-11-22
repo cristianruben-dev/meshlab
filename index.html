@@ -1,5 +1,20 @@
 <!doctype html>
-<html lang="en" class="dark">
-  <head><meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="theme-color" content="#0c1119" /><title>Meshlab — DC Circuit Workbench</title></head>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="theme-color" content="#f5f7fa" />
+    <title>Meshlab — DC Circuit Workbench</title>
+    <script>
+      // Apply the saved or system theme before first paint to avoid a flash.
+      try {
+        var saved = localStorage.getItem('meshlab:theme')
+        var dark = saved === 'dark' || (saved !== 'light' && matchMedia('(prefers-color-scheme: dark)').matches)
+        document.documentElement.classList.toggle('dark', dark)
+        document.documentElement.style.colorScheme = dark ? 'dark' : 'light'
+      } catch (error) { /* Storage or matchMedia may be unavailable. */ }
+    </script>
+  </head>
   <body><div id="root"></div><script type="module" src="/src/main.tsx"></script></body>
 </html>

@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { Activity, Languages, Search, ArrowDownToLine, ChevronDown, CircleCheck, CircuitBoard, ClipboardPaste, Copy, CopyPlus, Crosshair, Hand, MousePointer2, Pause, Play, Plus, Minus, Redo2, RotateCw, Trash2, Undo2, Upload, Waypoints } from 'lucide-react'
+import { Activity, Languages, Monitor, Moon, Sun, Search, ArrowDownToLine, ChevronDown, CircleCheck, CircuitBoard, ClipboardPaste, Copy, CopyPlus, Crosshair, Hand, MousePointer2, Pause, Play, Plus, Minus, Redo2, RotateCw, Trash2, Undo2, Upload, Waypoints } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
@@ -21,6 +21,8 @@ import { catalog, metric, parseMetric } from './editor/catalog'
 import { Symbol } from './editor/Symbol'
 import { readLanguage, translate, diagnostic, type Language, type Translate } from './locale'
 import { exportJson, exportPng, importJson } from './editor/io'
+import { useTheme, type ThemePreference } from './theme'
+import { palettes } from './palette'
 
 const Board = lazy(() => import('./breadboard/Board'))
 const exampleNames = Object.keys(examples)
@@ -32,6 +34,13 @@ const one = (n: number | readonly number[]) => typeof n === 'number' ? n : n[0]
 function Tool({ label, active, disabled, onClick, children }: { label: string; active?: boolean; disabled?: boolean; onClick: () => void; children: ReactNode }) {
   return <Tooltip><TooltipTrigger render={<Button variant="ghost" size="icon-sm" aria-label={label} aria-pressed={active} disabled={disabled} className={active ? 'tool-active' : 'tool'} onClick={onClick} />}>{children}</TooltipTrigger><TooltipContent>{label}</TooltipContent></Tooltip>
 }
+const themeOptions = [['system', Monitor, 'System theme'], ['light', Sun, 'Light theme'], ['dark', Moon, 'Dark theme']] as const
+function ThemeSwitch({ value, onChange, t }: { value: ThemePreference; onChange: (value: ThemePreference) => void; t: Translate }) {
+  return <div className="segmented theme-switch" role="group" aria-label={t('Theme')}>
+    {themeOptions.map(([option, Icon, label]) => <Tooltip key={option}><TooltipTrigger render={<Button variant="ghost" size="icon-sm" aria-label={t(label)}
+      aria-pressed={value === option} onClick={() => onChange(option)} />}><Icon /></TooltipTrigger><TooltipContent>{t(label)}</TooltipContent></Tooltip>)}
+  </div>
+}
 function Setting({ label, checked, onChange }: { label: string; checked: boolean; onChange: (checked: boolean) => void }) {
   return <label className="setting"><span>{label}</span><Switch size="sm" checked={checked} onCheckedChange={onChange} /></label>
 }
@@ -41,6 +50,8 @@ function Reading({ label, value }: { label: string; value: string }) {
 
 export default function App() {
   const [language, setLanguage] = useState<Language>(readLanguage)
+  const { preference, setPreference, theme } = useTheme()
+  const palette = palettes[theme]
   const [query, setQuery] = useState('')
   const t: Translate = value => translate(language, value)
   useEffect(() => {
@@ -131,7 +142,7 @@ export default function App() {
   return <TooltipProvider>
     <div className="workbench">
       <header className="topbar">
-        <div className="brand"><div className="brand-icon"><CircuitBoard size={21} /></div><div><strong>Meshlab<span>.</span></strong><small>{t('DC CIRCUIT WORKBENCH')}</small></div></div>
+        <div className="brand"><div className="brand-icon"><CircuitBoard size={19} /></div><div><strong>Meshlab<span>.</span></strong><small>{t('DC CIRCUIT WORKBENCH')}</small></div></div>
         <div className="top-actions">
           <Select items={Object.fromEntries(exampleNames.map(n => [n, t(n)]))} value={null} onValueChange={name => {
             if (name && examples[name]) { openCircuit(examples[name]); setMessage('') }
@@ -141,19 +152,22 @@ export default function App() {
           </Select>
           <Button variant="outline" size="sm" onClick={() => { openCircuit(blank); setMessage('') }}><Plus /> {t('New')}</Button>
           <Button variant="outline" size="sm" onClick={() => file.current?.click()}><Upload /> {t('Import')}</Button>
-          <Button variant="outline" size="sm" onClick={() => handleIo(() => exportJson(editor.circuit), 'JSON exported.')}><ArrowDownToLine /> JSON</Button>
-          <Button variant="outline" size="sm" onClick={() => handleIo(async () => { if (editor.svg.current) await exportPng(editor.svg.current, editor.view) }, 'PNG exported.')}><ArrowDownToLine /> PNG</Button>
+          <div className="export-group" role="group" aria-label={t('Export')}>
+            <Button variant="outline" size="sm" onClick={() => handleIo(() => exportJson(editor.circuit), 'JSON exported.')}><ArrowDownToLine /> JSON</Button>
+            <Button variant="outline" size="sm" onClick={() => handleIo(async () => { if (editor.svg.current) await exportPng(editor.svg.current, editor.view) }, 'PNG exported.')}><ArrowDownToLine /> PNG</Button>
+          </div>
           <input type="file" accept=".json,application/json" hidden ref={file} onChange={event => {
             const chosen = event.target.files?.[0]; event.target.value = ''
             if (chosen) void handleIo(async () => { openCircuit(await importJson(chosen)) }, 'Circuit imported.')
           }} />
         </div>
         <div className="session-actions">
+          <ThemeSwitch value={preference} onChange={setPreference} t={t} />
           <Select items={{ en: 'English', es: 'Español' }} value={language} onValueChange={value => { if (value === 'en' || value === 'es') { setLanguage(value); setQuery('') } }}>
             <SelectTrigger className="locale-trigger" aria-label={t('Language')}><Languages size={15} /><SelectValue /></SelectTrigger>
             <SelectContent><SelectItem value="en" lang="en">English</SelectItem><SelectItem value="es" lang="es">Español</SelectItem></SelectContent>
           </Select>
-          <Button className="run-button" onClick={toggleRun}>{running ? <Pause /> : <Play />}{running ? t('Pause') : t('Run simulation')}</Button>
+          <Button className="run-button" data-running={running} onClick={toggleRun}>{running ? <Pause /> : <Play />}{running ? t('Pause') : t('Run simulation')}</Button>
         </div>
       </header>
 
@@ -178,7 +192,7 @@ export default function App() {
             <div className="canvas-head">
               <div><span className="eyebrow">{t(viewMode === 'board' ? '02 / BREADBOARD' : '02 / SCHEMATIC')}</span><h1>{t(viewMode === 'board' ? 'Breadboard' : 'Circuit canvas')}</h1></div>
               <div className="canvas-head-actions">
-                <div className="board-view-control" role="group" aria-label={t('Circuit view')}>
+                <div className="segmented board-view-control" role="group" aria-label={t('Circuit view')}>
                   <Button size="sm" variant="ghost" aria-pressed={viewMode === 'schematic'} onClick={() => setViewMode('schematic')}>{t('Schematic')}</Button>
                   <Button size="sm" variant="ghost" aria-pressed={viewMode === 'board'} onClick={() => { setBoardOpened(true); setViewMode('board') }}>{t('Breadboard')}</Button>
                 </div>
@@ -211,20 +225,20 @@ export default function App() {
               </div>
             </div>
             <div className="canvas-wrap">
-              <Canvas t={t} svg={editor.svg} circuit={editor.drawn} view={editor.view} selected={editor.selected} flagged={flagged}
+              <Canvas t={t} palette={palette} svg={editor.svg} circuit={editor.drawn} view={editor.view} selected={editor.selected} flagged={flagged}
                 pins={active.net.nodeByPin} nodes={valid?.nodes ?? {}} readings={valid?.branches ?? {}} flows={flows} grounds={grounds}
                 mode={editor.mode} cursor={editor.cursor} wireFrom={editor.wireFrom} running={running} speed={speed} reverse={reverse}
                 showGround={showGround} showNodes={showNodes} showVoltage={showVoltage} onBackground={editor.backgroundDown}
                 onComponent={editor.componentDown} onEndpoint={editor.endpointDown} onWire={editor.wireDown} onRoute={editor.routeDown}
                 onMove={editor.move} onUp={editor.up} box={editor.box} />
-              {!hasCircuit && <div className="canvas-empty"><CircuitBoard /><strong>{t('Start a new circuit')}</strong><span>{t('Add components or load an example.')}</span></div>}
+              {!hasCircuit && <div className="canvas-empty"><span className="canvas-empty-icon"><CircuitBoard /></span><strong>{t('Start a new circuit')}</strong><span>{t('Add components or load an example.')}</span></div>}
             </div>
             <div className="canvas-foot"><span><i /> {editor.wireFrom ? t('Select a terminal or wire to connect') : editor.mode === 'wire' ? t('Start at a terminal or wire') : wire ? t('Drag a wire handle to reroute') : t('Click a terminal to start wiring')}</span>
               <span>{editor.circuit.components.length} {t('parts')} · {editor.circuit.wires.length} {t('wires')}</span></div>
             </div>
             {boardOpened && <div hidden={viewMode !== 'board'}>
               <Suspense fallback={<div className="board-unsupported" role="status">{t('Loading breadboard…')}</div>}>
-                <Board t={t} guide={guide} circuit={editor.circuit} pins={active.net.nodeByPin} readings={valid?.nodes} currents={currents}
+                <Board t={t} theme={theme} guide={guide} circuit={editor.circuit} pins={active.net.nodeByPin} readings={valid?.nodes} currents={currents}
                   selected={editor.selected} onSelect={editor.select} onToggle={part => editor.update(part, { closed: !part.closed })}
                   onLoad={name => { openCircuit(examples[name]); setMessage('') }} />
               </Suspense>
@@ -245,7 +259,7 @@ export default function App() {
             </div>)}{message && <div>{importError ? diagnostic(language, message, true) : t(message)}</div>}
             {editor.storageError && <div>{t('Autosave is unavailable in this browser.')}</div>}
           </div> : null}
-          {transient.enabled && <Scope t={t} samples={transient.samples} time={transient.time} parts={probeParts}
+          {transient.enabled && <Scope t={t} palette={palette} samples={transient.samples} time={transient.time} parts={probeParts}
             probe={activeProbe} onProbe={setProbe} reset={transient.reset} />}
           <Collapsible className="results surface" open={resultsOpen} onOpenChange={setResultsOpen}>
             <CollapsibleTrigger render={<button className="results-trigger" />}><Activity size={17} /><span>{t('Simulation results')}</span><small>{valid ? `${t('Residual')} ${metric(valid.balance, 'W')}` : t(pendingSample ? 'Awaiting a transient sample' : 'No solution')}</small><ChevronDown className={resultsOpen ? 'open' : ''} size={16} /></CollapsibleTrigger>
@@ -264,7 +278,7 @@ export default function App() {
           <div className="panel-header"><span className="eyebrow">{t('03 / INSPECTOR')}</span><h2>{t('Properties')}</h2><p>{t('Parameters and measurements.')}</p></div>
           <div className="inspector-body">
             {inspected ? <Properties t={t} key={inspected.id} part={inspected} update={(changes, preview) => editor.update(inspected, changes, preview)} /> :
-              <div className="empty-inspector"><MousePointer2 size={18} /><span>{wire ? t('Wire selected') : editor.selected.length ? `${editor.selected.length} ${t('items selected')}` : t('Nothing selected')}</span>
+              <div className="empty-inspector"><span className="empty-inspector-icon"><MousePointer2 size={16} /></span><span>{wire ? t('Wire selected') : editor.selected.length ? `${editor.selected.length} ${t('items selected')}` : t('Nothing selected')}</span>
                 <small>{wire ? `${t('Current')}: ${metric(flows[wire.id], 'A')}` : t('Select a component to edit its parameters.')}</small></div>}
             {inspected && <div className="measurements"><Reading label={t('Voltage drop')} value={metric(read?.voltage, 'V')} /><Reading label={t('Current')} value={metric(inspected.kind === 'ground' ? grounds[inspected.id] : read?.current, 'A')} /><Reading label={t('Power')} value={metric(read?.power, 'W')} /></div>}
             <div className="settings"><h3>{t('Visualization')}</h3>

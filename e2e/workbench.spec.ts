@@ -150,7 +150,7 @@ test('edits a component rating and locates the resulting alert', async ({ page }
   await expect(notice).toContainText('R2')
   await expect(notice).toContainText('32 mW')
   await notice.getByRole('button', { name: 'Locate' }).click()
-  await expect(schematic(page).locator('.part').filter({ hasText: /R2/ }).locator('rect[stroke="#ffc170"]')).toBeVisible()
+  await expect(schematic(page).locator('.part').filter({ hasText: /R2/ }).locator('rect.flag-outline')).toBeVisible()
   await expect(input).toHaveValue('10 mW')
 })
 
@@ -252,4 +252,19 @@ test('loads and operates the LED guide on a narrow Spanish viewport', async ({ p
   await expect(page.getByRole('button', { name: 'Cerrar interruptor' })).toBeVisible()
   await expect(page.getByRole('row', { name: /^D1\b/ })).toContainText('0 A')
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBe(0)
+})
+
+test('follows the system color scheme until a theme is chosen, then keeps the choice after reload', async ({ page }) => {
+  await page.emulateMedia({ colorScheme: 'dark' })
+  await page.reload()
+  const html = page.locator('html')
+  await expect(html).toHaveClass(/dark/)
+  const themes = page.getByRole('group', { name: 'Theme' })
+  await expect(themes.getByRole('button', { name: 'System theme' })).toHaveAttribute('aria-pressed', 'true')
+  await themes.getByRole('button', { name: 'Light theme' }).click()
+  await expect(html).not.toHaveClass(/dark/)
+  await page.reload()
+  await expect(html).not.toHaveClass(/dark/)
+  await expect(page.getByRole('group', { name: 'Theme' }).getByRole('button', { name: 'Light theme' })).toHaveAttribute('aria-pressed', 'true')
+  await expect(page.getByRole('row', { name: /^R1\b/ })).toContainText('4 mA')
 })

@@ -5,9 +5,10 @@ import type { Component } from '../circuit/model'
 import type { Translate } from '../locale'
 import { metric } from './catalog'
 import type { Sample } from './useTransient'
+import type { Palette } from '../palette'
 
-export default function Scope({ t, samples, time, parts, probe, onProbe, reset }: {
-  t: Translate; samples: Sample[]; time: number; parts: Component[]; probe: string; onProbe: (id: string) => void; reset: () => void
+export default function Scope({ t, palette: c, samples, time, parts, probe, onProbe, reset }: {
+  t: Translate; palette: Palette; samples: Sample[]; time: number; parts: Component[]; probe: string; onProbe: (id: string) => void; reset: () => void
 }) {
   const readings = samples.flatMap(sample => sample.voltages[probe] === undefined ? [] : [{ time: sample.time, volts: sample.voltages[probe] }])
   const low = Math.min(0, ...readings.map(p => p.volts))
@@ -31,16 +32,17 @@ export default function Scope({ t, samples, time, parts, probe, onProbe, reset }
       <Button variant="outline" size="sm" onClick={reset}><RotateCcw />{t('Reset transient')}</Button>
     </div>
     <svg role="img" aria-label={t('Voltage versus time')} viewBox="0 0 720 170">
+      <rect width="720" height="170" fill={c.scopeBackground} />
       {divisions.map(fraction => {
         const v = min + (max - min) * fraction
         const at = from + (to - from) * fraction
         return <g key={fraction} className="scope-grid">
-          <path d={`M66,${y(v)}H701 M${x(at)},29V137`} />
-          <text x="59" y={y(v) + 4} textAnchor="end">{metric(v, 'V')}</text>
-          <text x={x(at)} y="155" textAnchor={fraction === 1 ? 'end' : 'middle'}>{metric(at, 's')}</text>
+          <path d={`M66,${y(v)}H701 M${x(at)},29V137`} stroke={c.scopeGrid} />
+          <text x="59" y={y(v) + 4} textAnchor="end" fill={c.scopeText}>{metric(v, 'V')}</text>
+          <text x={x(at)} y="155" textAnchor={fraction === 1 ? 'end' : 'middle'} fill={c.scopeText}>{metric(at, 's')}</text>
         </g>
       })}
-      {readings.length > 1 && <polyline points={points} fill="none" stroke="#68ecc9" strokeWidth="2.5" strokeLinejoin="round" />}
+      {readings.length > 1 && <polyline className="scope-trace" points={points} fill="none" stroke={c.trace} strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round" />}
     </svg>
   </section>
 }
