@@ -75,7 +75,7 @@ describe('DC operating point', () => {
     expect(solve([
       branch('v', 'voltage', 'p', '0', 5),
       branch('s', 'switch', 'p', '0', 0, { closed: true }),
-    ])).toMatchObject({ ok: false, error: expect.stringMatching(/short circuit/i) });
+    ])).toMatchObject({ ok: false, error: expect.stringMatching(/short circuit/i), target: { branchId: 's' } });
     expect(solve([branch('v', 'voltage', '0', '0', 5)])).toMatchObject({
       ok: false, error: expect.stringMatching(/short circuit/i),
     });
@@ -88,7 +88,7 @@ describe('DC operating point', () => {
       branch('v', 'voltage', 'p', '0', 5),
       branch('r', 'resistor', 'x', 'y', 100),
     ]);
-    expect(disconnected).toMatchObject({ ok: false, error: expect.stringMatching(/floating/i) });
+    expect(disconnected).toMatchObject({ ok: false, error: expect.stringMatching(/floating/i), target: { node: 'x' } });
     const redundant = solve([
       branch('v1', 'voltage', 'p', '0', 5),
       branch('v2', 'voltage', 'p', '0', 5),
@@ -109,6 +109,7 @@ describe('DC operating point', () => {
       branch('s2', 'switch', 'y', '0', 0, { closed: false }),
     ]);
     expect(result.warnings.join(' ')).toMatch(/floating/i);
+    expect(result.warningTargets?.[result.warnings[0]]).toEqual({ node: 'x' });
     for (const reading of Object.values(result.branches)) expect(reading.current).toBe(0);
     expect(solve([
       branch('i', 'current', '0', 'p', 1),

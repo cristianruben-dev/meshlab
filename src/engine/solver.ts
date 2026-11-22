@@ -14,9 +14,11 @@ export type Branch = {
 
 export type BranchReading = { voltage: number; current: number; power: number };
 
+export type DiagnosticTarget = { branchId?: string; node?: string };
+
 export type SolveResult =
-  | { ok: true; nodes: Record<string, number>; branches: Record<string, BranchReading>; balance: number; warnings: string[] }
-  | { ok: false; error: string };
+  | { ok: true; nodes: Record<string, number>; branches: Record<string, BranchReading>; balance: number; warnings: string[]; warningTargets?: Record<string, DiagnosticTarget> }
+  | { ok: false; error: string; target?: DiagnosticTarget };
 
 type Model =
   | { type: 'open' }
@@ -32,8 +34,8 @@ const OFF_CONDUCTANCE = 1e-9;
 const FORWARD_ADDITIONAL_CONDUCTANCE = 1 - OFF_CONDUCTANCE;
 const RELATIVE_TOLERANCE = 128 * Number.EPSILON;
 
-function error(message: string): SolveResult & { ok: false } {
-  return { ok: false, error: message };
+function error(message: string, target?: DiagnosticTarget): SolveResult & { ok: false } {
+  return { ok: false, error: message, ...(target && { target }) };
 }
 
 function modelBranch(branch: Branch, tripped: Set<string>): Model {
@@ -78,7 +80,7 @@ function connected(neighbors: Adjacency, start: string, visited: Set<string>): s
   return nodes;
 }
 
-function checkIdealConstraints(devices: Device[]): string | undefined {
+function checkIdealConstraints(devices: Device[]) {
   const edges = new Map<string, { node: string; offset: number }[]>();
   const link = (a: string, b: string, offset: number) => {
     const neighbors = edges.get(a);
@@ -109,7 +111,7 @@ function checkIdealConstraints(devices: Device[]): string | undefined {
     const existing = offsets.get(b);
     if (existing !== undefined) {
       if (Math.abs(existing.sum - model.voltage) > RELATIVE_TOLERANCE * Math.max(existing.magnitude, Math.abs(model.voltage))) {
-        return `Short circuit: conflicting ideal voltage constraints at ${id}.`;
+        return { message: `Short circuit: conflicting ideal voltage constraints at ${id}.`, id };
       }
       redundant ??= id;
     } else {
@@ -119,7 +121,7 @@ function checkIdealConstraints(devices: Device[]): string | undefined {
   }
   return redundant === undefined
     ? undefined
-    : `Singular circuit: redundant ideal voltage constraint at ${redundant}; branch currents are not uniquely determined.`;
+    : { message: `Singular circuit: redundant ideal voltage constraint at ${redundant}; branch currents are not uniquely determined.`, id: redundant };
 }
 
 function getReferences(nodes: string[], devices: Device[]) {
@@ -127,6 +129,7 @@ function getReferences(nodes: string[], devices: Device[]) {
   const visited = new Set<string>();
   const references = new Set(['0']);
   const warnings: string[] = [];
+  const warningTargets: Record<string, DiagnosticTarget> = Object.create(null);
   connected(neighbors, '0', visited);
 
   for (const node of nodes) {
@@ -141,13 +144,15 @@ function getReferences(nodes: string[], devices: Device[]) {
       magnitude += Math.abs(model.current);
     }
     if (Math.abs(net) > RELATIVE_TOLERANCE * magnitude) {
-      return { error: `Open circuit: ideal current source has no DC return path at node ${node}.` };
+      return { error: `Open circuit: ideal current source has no DC return path at node ${node}.`, node };
     }
     // Fix only an arbitrary voltage offset, never add a physical return path.
     references.add(node);
-    warnings.push(`Floating section at node ${node}: its voltage relative to ground is undefined; shown with a local 0 V reference.`);
+    const warning = `Floating section at node ${node}: its voltage relative to ground is undefined; shown with a local 0 V reference.`;
+    warnings.push(warning);
+    warningTargets[warning] = { node };
   }
-  return { references, warnings };
+  return { references, warnings, warningTargets };
 }
 
 /** Scaled partial pivoting; the last column contains the right-hand side. */
@@ -307,16 +312,17 @@ export function solve(branches: Branch[]): SolveResult {
   const reachable = new Set<string>();
   connected(graph(nodes, branches), '0', reachable);
   const floating = nodes.find((node) => !reachable.has(node));
-  if (floating !== undefined) return error(`Floating component at node ${floating}: disconnected from the ground reference.`);
+  if (floating !== undefined) return error(`Floating component at node ${floating}: disconnected from the ground reference.`, { node: floating });
 
   const trips = new Set<string>();
   const fuseWarnings: string[] = [];
+  const fuseTargets: Record<string, DiagnosticTarget> = Object.create(null);
   for (;;) {
     const devices = branches.map((branch) => ({ ...branch, model: modelBranch(branch, trips) }));
     const conflict = checkIdealConstraints(devices);
-    if (conflict) return error(conflict);
+    if (conflict) return error(conflict.message, { branchId: conflict.id });
     const reference = getReferences(nodes, devices);
-    if (reference.error !== undefined) return error(reference.error);
+    if (reference.error !== undefined) return error(reference.error, { node: reference.node });
     const result = solveDevices(nodes, devices, reference.references);
     if (result.error !== undefined) return error(result.error);
     const { nodes: voltages, idealCurrents } = result.solution;
@@ -341,11 +347,14 @@ export function solve(branches: Branch[]): SolveResult {
         branches: Object.fromEntries(readings),
         balance,
         warnings: [...fuseWarnings, ...reference.warnings],
+        ...((fuseWarnings.length || reference.warnings.length) && { warningTargets: { ...fuseTargets, ...reference.warningTargets } }),
       };
     }
     for (const fuse of pending) {
       trips.add(fuse.id);
-      fuseWarnings.push(`Fuse ${fuse.id} tripped (limit ${fuse.value} A).`);
+      const warning = `Fuse ${fuse.id} tripped (limit ${fuse.value} A).`;
+      fuseWarnings.push(warning);
+      fuseTargets[warning] = { branchId: fuse.id };
     }
   }
 }
