@@ -201,6 +201,8 @@ const spanish: Record<string, string> = {
   "Reading unavailable": "Medición no disponible",
   "Enter a valid value in": "Introduce un valor válido en",
   "Enter a positive value in": "Introduce un valor positivo en"
+  // Breadboard strings (unit A adds below this line).
+  // Workspace shell strings (unit B adds below this line).
 }
 
 export function readLanguage(): Language {

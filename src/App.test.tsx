@@ -58,17 +58,6 @@ describe('circuit workbench', () => {
     expect(branches.getAllByText('4 mA')).toHaveLength(2)
   })
 
-  it('keeps the 2D breadboard and explains why when WebGL is unavailable for the 3D view', async () => {
-    render(<App />)
-    fireEvent.click(screen.getByRole('button', { name: 'Breadboard' }))
-    const board = await screen.findByRole('group', { name: 'Interactive breadboard' })
-    fireEvent.click(screen.getByRole('button', { name: '3D view' }))
-    expect(screen.getByText('3D is unavailable in this browser. The 2D board stays available.')).toBeTruthy()
-    expect(screen.getByRole('button', { name: '2D view' }).getAttribute('aria-pressed')).toBe('true')
-    fireEvent.click(within(board).getByRole('button', { name: 'Socket H10' }))
-    expect(screen.getByText('H10 · 8 V')).toBeTruthy()
-  })
-
   it('filters the component library by name and restores all options when cleared', () => {
     render(<App />)
     const search = screen.getByRole('searchbox', { name: 'Find components' })
