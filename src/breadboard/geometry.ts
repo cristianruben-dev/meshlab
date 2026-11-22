@@ -6,6 +6,11 @@ export const rowY = [89, 111, 151, 170, 189, 208, 227, 264, 283, 302, 321, 340, 
 export const layout = ROWS.flatMap((row, r) => columns.map(col => ({ id: `${row}${col}`, row: r, col, x: 104 + (col - 1) * 29, y: rowY[r] })))
 const byId = new Map(layout.map(p => [p.id, p]))
 export const hole = (id: string) => byId.get(id)!
+/** Socket nearest to a board point, or undefined when farther than `reach` drawing units. */
+export function nearestSocket(x: number, y: number, reach = 10) {
+  const best = layout.reduce((a, b) => Math.hypot(b.x - x, b.y - y) < Math.hypot(a.x - x, a.y - y) ? b : a)
+  return Math.hypot(best.x - x, best.y - y) < reach ? best.id : undefined
+}
 export const rowLabels = ['T+', 'T−', 'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'B+', 'B−']
 export const BOARD = { width: 760, height: 435 }
 

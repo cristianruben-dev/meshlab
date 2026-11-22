@@ -268,3 +268,23 @@ test('follows the system color scheme until a theme is chosen, then keeps the ch
   await expect(page.getByRole('group', { name: 'Theme' }).getByRole('button', { name: 'Light theme' })).toHaveAttribute('aria-pressed', 'true')
   await expect(page.getByRole('row', { name: /^R1\b/ })).toContainText('4 mA')
 })
+
+test('renders the optional 3D breadboard, selects a part from it, and returns to the 2D probe', async ({ page }) => {
+  await page.getByRole('button', { name: 'Breadboard', exact: true }).click()
+  const board = page.getByRole('group', { name: 'Interactive breadboard' })
+  await board.getByRole('button', { name: 'Socket H10', exact: true }).click()
+  await page.getByRole('button', { name: '3D view', exact: true }).click()
+  const model = page.getByRole('img', { name: /3D breadboard/ })
+  await expect(model.locator('canvas')).toBeVisible()
+  await expect(board).toBeHidden()
+  const tag = model.locator('.board3d-label', { hasText: 'R1' })
+  await expect(tag).toBeVisible()
+  const box = (await tag.boundingBox())!
+  await page.mouse.click(box.x + box.width / 2, box.y + box.height + 9)
+  await expect(page.getByRole('textbox', { name: 'Label' })).toHaveValue('R1')
+  await page.getByRole('button', { name: 'Orbit right' }).click()
+  await page.getByRole('button', { name: 'Reset 3D view' }).click()
+  await expect(page.getByRole('status').filter({ hasText: 'H10' })).toHaveText('H10 · 8 V')
+  await page.getByRole('button', { name: '2D view', exact: true }).click()
+  await expect(board.getByRole('button', { name: 'Socket H10', exact: true })).toBeVisible()
+})

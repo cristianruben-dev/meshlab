@@ -1,5 +1,5 @@
-import { useState, type KeyboardEvent } from 'react'
-import { ArrowRight, Check, ChevronLeft, CircuitBoard, Crosshair, ListChecks, RotateCcw, Zap } from 'lucide-react'
+import { lazy, Suspense, useState, type KeyboardEvent } from 'react'
+import { ArrowRight, Box, Check, ChevronLeft, CircuitBoard, Crosshair, ListChecks, RotateCcw, Zap } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import type { Circuit, Component } from '../circuit/model'
 import { metric } from '../editor/catalog'
@@ -10,6 +10,14 @@ import { COLUMNS, ROWS, boardGuides, holeGroup, populated, probeNode, validateSt
 import { hole, layout } from './geometry'
 import { BoardDefs, BoardSurface, Mounted, boardPalettes } from './art'
 import './board.css'
+
+const Board3D = lazy(() => import('./Board3D'))
+function webgl() {
+  try {
+    const canvas = document.createElement('canvas')
+    return !!(canvas.getContext('webgl2') ?? canvas.getContext('webgl'))
+  } catch { return false }
+}
 const feedback: Record<PlacementIssue, string> = {
   incomplete: 'Select all sockets for this step.',
   occupied: 'A socket is already occupied. Choose a free socket in that strip.',
@@ -44,6 +52,8 @@ export default function Board(props: Props) {
 function GuidedBoard({ guide, circuit, theme, t, pins, readings, currents, selected, onSelect, onToggle, onLoad }: Props & { guide: Guide }) {
   const [mode, setMode] = useState<'preview' | 'build'>('preview')
   const c = boardPalettes[theme]
+  const [view, setView] = useState<'2d' | '3d'>('2d')
+  const [noWebgl, setNoWebgl] = useState(false)
   const [assembly, setAssembly] = useState<Assembly>({})
   const [choice, setChoice] = useState<string[]>([])
   const [issue, setIssue] = useState<PlacementIssue>()
@@ -140,9 +150,22 @@ function GuidedBoard({ guide, circuit, theme, t, pins, readings, currents, selec
         <Button size="sm" variant={mode === 'preview' ? 'secondary' : 'ghost'} aria-pressed={mode === 'preview'} onClick={() => switchMode('preview')}><Crosshair />{t('Assembled')}</Button>
         <Button size="sm" variant={mode === 'build' ? 'secondary' : 'ghost'} aria-pressed={mode === 'build'} onClick={() => switchMode('build')}><ListChecks />{t('Guided build')}</Button>
       </div>
+      <div className="segmented board-dimension" role="group" aria-label={t('Board rendering')}>
+        <Button size="sm" variant="ghost" aria-label={t('2D view')} aria-pressed={view === '2d'} onClick={() => setView('2d')}>2D</Button>
+        <Button size="sm" variant="ghost" aria-label={t('3D view')} aria-pressed={view === '3d'} onClick={() => {
+          if (webgl()) { setNoWebgl(false); setView('3d') } else setNoWebgl(true)
+        }}><Box />3D</Button>
+      </div>
     </div>
-    <div className="board-stage">
-      <svg viewBox="0 0 760 435" role="group" aria-label={t('Interactive breadboard')} className="board-svg">
+    {noWebgl && <p role="status" className="board-fallback">{t('3D is unavailable in this browser. The 2D board stays available.')}</p>}
+    <div className="board-stage" data-view={view}>
+      {view === '3d' && <Suspense fallback={<div className="board3d-loading" role="status">{t('Loading 3D view…')}</div>}>
+        <Board3D t={t} theme={theme} steps={guide.steps} visible={visible} parts={parts} currents={currents} selected={selected}
+          strip={selectedStrip ? layout.filter(p => holeGroup(p.id) === selectedStrip).map(p => p.id) : []} probe={probe}
+          choice={choice} targets={step?.sockets ?? []} targetIndex={targetIndex} onSocket={selectHole} onPart={id => onSelect([id])}
+          onUnavailable={() => { setView('2d'); setNoWebgl(true) }} />
+      </Suspense>}
+      <svg style={view === '3d' ? { display: 'none' } : undefined} viewBox="0 0 760 435" role="group" aria-label={t('Interactive breadboard')} className="board-svg">
         <BoardDefs c={c} />
         <BoardSurface c={c} />
         <g pointerEvents="none">
