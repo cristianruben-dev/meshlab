@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import { CSS2DObject, CSS2DRenderer } from 'three/addons/renderers/CSS2DRenderer.js'
@@ -8,80 +8,83 @@ import type { Component } from '../circuit/model'
 import { metric } from '../editor/catalog'
 import type { Translate } from '../locale'
 import type { Theme } from '../theme'
-import { boardPalettes, type BoardPalette } from './art'
-import { columns, hole, layout, nearestSocket, resistorBands, rowLabels, rowY } from './geometry'
-import type { Assembly, BoardStep } from './model'
+import { boardPalettes, type BoardPalette } from './palette'
+import { resistorBands, type BoardGeometry, type CursorKey } from './geometry'
+import { TERMINAL_ROWS, type Placement } from './model'
 
-/** World units per SVG unit; the board plane sits at y = 0 and SVG y maps to world z. */
+/** World units per drawing unit; the board's top face sits at y = 0 and drawing y maps to world z. */
 const S = 0.1
-const world = (x: number, y: number, height = 0) => new THREE.Vector3((x - 380) * S, height, (y - 230.5) * S)
-const BODY = { x: 25, y: 44, w: 710, h: 373 }
+const HOME = new THREE.Vector3(0, 56, 50).normalize()
 
 export type Board3DProps = {
   t: Translate
   theme: Theme
-  steps: BoardStep[]
-  visible: Assembly
+  geometry: BoardGeometry
+  labels: boolean
+  placements: Placement[]
   parts: Map<string, Component>
   currents: Record<string, number> | undefined
   selected: string[]
   strip: string[]
   probe: string
-  choice: string[]
-  targets: string[]
-  targetIndex: number
   onSocket: (id: string) => void
   onPart: (id: string) => void
   onUnavailable: () => void
 }
+type Scene = Board3DProps & { cursor?: string }
 
-function webglAvailable() {
-  try {
-    const canvas = document.createElement('canvas')
-    return !!(canvas.getContext('webgl2') ?? canvas.getContext('webgl'))
-  } catch { return false }
-}
+const isLit = (part: Component | undefined, currents: Record<string, number> | undefined) => !!part && (currents?.[part.id] ?? 0) > .00005
 
-/** Paints sockets, rails, indices, and guide markers on the board's top face. */
-function paintSurface(ctx: CanvasRenderingContext2D, c: BoardPalette, props: Pick<Board3DProps, 'strip' | 'probe' | 'choice' | 'targets' | 'targetIndex'>) {
-  const k = ctx.canvas.width / BODY.w
-  ctx.setTransform(k, 0, 0, k, -BODY.x * k, -BODY.y * k)
-  const body = ctx.createLinearGradient(0, BODY.y, 0, BODY.y + BODY.h)
+/** Paints the body, rails, indices, sockets, probe strip, and keyboard cursor on the board's top face. */
+function paintSurface(ctx: CanvasRenderingContext2D, c: BoardPalette, p: Scene) {
+  const g = p.geometry, { width: W, height: H, rowY } = g
+  const k = ctx.canvas.width / W
+  ctx.setTransform(k, 0, 0, k, 0, 0)
+  const body = ctx.createLinearGradient(0, 0, 0, H)
   body.addColorStop(0, c.bodyTop); body.addColorStop(1, c.bodyBottom)
-  ctx.fillStyle = body; ctx.fillRect(BODY.x, BODY.y, BODY.w, BODY.h)
+  ctx.fillStyle = body; ctx.fillRect(0, 0, W, H)
   ctx.fillStyle = c.well; ctx.strokeStyle = c.wellEdge; ctx.lineWidth = 1
-  ctx.beginPath(); ctx.roundRect(38, 132, 685, 224, 10); ctx.fill(); ctx.stroke()
-  const trench = ctx.createLinearGradient(0, 239, 0, 254)
+  ctx.beginPath(); ctx.roundRect(16, rowY.A - 28, W - 32, rowY.J - rowY.A + 56, 10); ctx.fill(); ctx.stroke()
+  const trench = ctx.createLinearGradient(0, g.trenchY - 8, 0, g.trenchY + 8)
   trench.addColorStop(0, c.trenchA); trench.addColorStop(.5, c.trenchB); trench.addColorStop(1, c.trenchA)
-  ctx.fillStyle = trench; ctx.beginPath(); ctx.roundRect(42, 239, 677, 15, 4); ctx.fill()
-  ctx.lineWidth = 2.2; ctx.lineCap = 'round'
-  for (const [y, color] of [[80, '#cc3e3a'], [120, '#3d6fc0'], [362, '#cc3e3a'], [402, '#3d6fc0']] as const) {
-    ctx.strokeStyle = color; ctx.beginPath(); ctx.moveTo(85, y); ctx.lineTo(674, y); ctx.stroke()
+  ctx.fillStyle = trench; ctx.beginPath(); ctx.roundRect(20, g.trenchY - 8, W - 40, 16, 4); ctx.fill()
+
+  const { railLength, split } = g.shape
+  if (railLength) {
+    const x = (row: string, i: number) => g.hole(`${row}${i}`)!.x
+    const spans = split ? [[1, railLength / 2], [railLength / 2 + 1, railLength]] : [[1, railLength]]
+    ctx.lineWidth = 2.2; ctx.lineCap = 'round'
+    for (const [row, dy, color] of [['T+', -12, '#cc3e3a'], ['T-', 12, '#3d6fc0'], ['B+', -12, '#cc3e3a'], ['B-', 12, '#3d6fc0']] as const)
+      for (const [a, b] of spans) {
+        ctx.strokeStyle = color; ctx.beginPath(); ctx.moveTo(x(row, a) - 10, rowY[row] + dy); ctx.lineTo(x(row, b) + 10, rowY[row] + dy); ctx.stroke()
+      }
   }
-  ctx.fillStyle = c.index; ctx.font = '600 10px "Geist Mono Variable", ui-monospace, monospace'; ctx.textAlign = 'center'
-  rowLabels.forEach((row, i) => ctx.fillText(row, 62, rowY[i] + 4))
-  columns.forEach(col => ctx.fillText(String(col), hole(`A${col}`).x, 143))
-  const strip = new Set(props.strip)
-  for (const p of layout) {
-    ctx.fillStyle = c.socket; ctx.strokeStyle = c.socketRim; ctx.lineWidth = 1.3
-    ctx.beginPath(); ctx.roundRect(p.x - 3.6, p.y - 3.6, 7.2, 7.2, 1.6); ctx.fill(); ctx.stroke()
-    if (strip.has(p.id)) {
-      ctx.fillStyle = c.strip; ctx.globalAlpha = p.id === props.probe ? .95 : .55
-      ctx.beginPath(); ctx.roundRect(p.x - 5.5, p.y - 5.5, 11, 11, 3); ctx.fill(); ctx.globalAlpha = 1
+  if (p.labels) {
+    ctx.fillStyle = c.index; ctx.font = '600 10px "Geist Mono Variable", ui-monospace, monospace'; ctx.textAlign = 'center'
+    for (const row of g.rows) {
+      const text = row.length === 2 ? (row.endsWith('+') ? '+' : '−') : row
+      ctx.fillText(text, 30, rowY[row] + 3.5); ctx.fillText(text, W - 30, rowY[row] + 3.5)
+    }
+    const { columns } = g.shape
+    for (let col = 1; col <= columns; col++) {
+      if (columns > 30 && col !== 1 && col % 5) continue
+      ctx.fillText(String(col), g.columnX(col), rowY.A - 13); ctx.fillText(String(col), g.columnX(col), rowY.J + 20)
     }
   }
-  ctx.setLineDash([3.5, 2.5]); ctx.lineWidth = 2.4; ctx.strokeStyle = c.target
-  props.targets.forEach((id, i) => {
-    const p = hole(id)
-    ctx.globalAlpha = i === props.targetIndex ? 1 : .55
-    ctx.beginPath(); ctx.arc(p.x, p.y, i === props.targetIndex ? 12 : 8.5, 0, Math.PI * 2); ctx.stroke()
-  })
-  ctx.setLineDash([]); ctx.globalAlpha = 1
-  props.choice.forEach((id, i) => {
-    const p = hole(id)
-    ctx.fillStyle = c.target; ctx.beginPath(); ctx.arc(p.x, p.y, 8.5, 0, Math.PI * 2); ctx.fill()
-    ctx.fillStyle = '#fff'; ctx.fillText(String(i + 1), p.x, p.y + 3.5)
-  })
+  const strip = new Set(p.strip)
+  for (const s of g.sockets) {
+    ctx.fillStyle = c.socket; ctx.strokeStyle = c.socketRim; ctx.lineWidth = 1.3
+    ctx.beginPath(); ctx.roundRect(s.x - 4, s.y - 4, 8, 8, 1.8); ctx.fill(); ctx.stroke()
+    if (strip.has(s.id)) {
+      ctx.fillStyle = c.strip; ctx.globalAlpha = s.id === p.probe ? .95 : .55
+      ctx.beginPath(); ctx.roundRect(s.x - 6.5, s.y - 6.5, 13, 13, 3.5); ctx.fill(); ctx.globalAlpha = 1
+    }
+  }
+  const cursor = p.cursor && g.hole(p.cursor)
+  if (cursor) {
+    ctx.strokeStyle = c.cursor; ctx.lineWidth = 3
+    ctx.beginPath(); ctx.arc(cursor.x, cursor.y, 10.5, 0, Math.PI * 2); ctx.stroke()
+  }
 }
 
 const metal = () => new THREE.MeshStandardMaterial({ color: '#c3cbd2', metalness: .85, roughness: .32 })
@@ -109,19 +112,20 @@ function label(text: string, tone: 'dark' | 'plus' | 'minus' | 'selected' = 'dar
   return new CSS2DObject(node)
 }
 
-/** Builds the meshes for one mounted step and returns them tagged with the owning part. */
-function buildStep(step: BoardStep, sockets: string[], part: Component | undefined, lit: boolean, selected: boolean, highlight: string) {
+/** Builds the meshes for one placement and tags them with the owning part. */
+function buildPlacement(item: Placement, geometry: BoardGeometry, part: Component | undefined, lit: boolean, selected: boolean, highlight: string) {
+  const world = (x: number, y: number, height = 0) => new THREE.Vector3((x - geometry.width / 2) * S, height, (y - geometry.height / 2) * S)
   const group = new THREE.Group()
-  const a = hole(sockets[0]), b = sockets[1] ? hole(sockets[1]) : a
+  const a = geometry.hole(item.sockets[0])!, b = item.sockets[1] ? geometry.hole(item.sockets[1])! : a
   const A = world(a.x, a.y), B = world(b.x, b.y)
   const tint = (material: THREE.MeshStandardMaterial) => { if (selected) { material.emissive.set(highlight); material.emissiveIntensity = .35 } return material }
   if (part?.kind === 'voltage' || part?.kind === 'ground') {
     const ends = part.kind === 'voltage' ? [a, b] : [a]
     ends.forEach((p, i) => {
       const color = part.kind === 'ground' ? '#2c3a48' : i ? '#3d6fc0' : '#cc3e3a'
-      const out = p.y < 200 ? -1 : 1
-      const base = world(p.x, p.y), top = world(p.x, p.y + out * 6, 4.2)
-      group.add(lead([base, world(p.x, p.y, .6), world(p.x, p.y + out * 2, 2.6), top], .24, tint(new THREE.MeshStandardMaterial({ color, roughness: .45 }))))
+      const out = p.y < geometry.height / 2 ? -1 : 1
+      const top = world(p.x, p.y + out * 6, 4.2)
+      group.add(lead([world(p.x, p.y), world(p.x, p.y, .6), world(p.x, p.y + out * 2, 2.6), top], .24, tint(new THREE.MeshStandardMaterial({ color, roughness: .45 }))))
       const housing = new THREE.Mesh(new THREE.BoxGeometry(.95, 2, .95), tint(new THREE.MeshStandardMaterial({ color: '#1f252c', roughness: .5 })))
       housing.position.copy(world(p.x, p.y, 1)); housing.castShadow = true
       group.add(housing)
@@ -130,9 +134,9 @@ function buildStep(step: BoardStep, sockets: string[], part: Component | undefin
       group.add(tag)
     })
   } else if (!part) {
-    const lift = 1.6 + A.distanceTo(B) * .18
+    const lift = Math.min(1.6 + A.distanceTo(B) * .18, 4.5)
     const mid = A.clone().lerp(B, .5).setY(lift)
-    group.add(lead([A, A.clone().setY(.9), mid, B.clone().setY(.9), B], .3, new THREE.MeshStandardMaterial({ color: step.color, roughness: .38 })))
+    group.add(lead([A, A.clone().setY(.9), mid, B.clone().setY(.9), B], .3, new THREE.MeshStandardMaterial({ color: item.color ?? '#da9f57', roughness: .38 })))
   } else {
     const height = part.kind === 'led' ? 2.4 : 1.6
     const center = A.clone().lerp(B, .5)
@@ -156,9 +160,9 @@ function buildStep(step: BoardStep, sockets: string[], part: Component | undefin
         const light = new THREE.PointLight('#ff6a3d', 30, 22, 2)
         light.position.y = 3
         body.add(light)
-        const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTexture(), color: '#ff7a45', blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: .85 }))
-        glow.scale.set(11, 11, 1); glow.position.y = 2.4
-        body.add(glow)
+        const halo = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTexture(), color: '#ff7a45', blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: .85 }))
+        halo.scale.set(11, 11, 1); halo.position.y = 2.4
+        body.add(halo)
       }
     } else if (part.kind === 'switch') {
       const housing = new THREE.Mesh(new THREE.BoxGeometry(5.4, 1.8, 2.6), tint(new THREE.MeshStandardMaterial({ color: '#33404c', roughness: .55 })))
@@ -176,7 +180,8 @@ function buildStep(step: BoardStep, sockets: string[], part: Component | undefin
         body.add(bulb)
       }
       resistorBands(part.value).forEach((color, i) => {
-        const band = new THREE.Mesh(new THREE.CylinderGeometry(i === 0 || i === 3 ? 1.14 : .93, i === 0 || i === 3 ? 1.14 : .93, .38, 24), new THREE.MeshStandardMaterial({ color, roughness: .5, metalness: i === 3 ? .6 : 0 }))
+        const radius = i === 0 || i === 3 ? 1.14 : .93
+        const band = new THREE.Mesh(new THREE.CylinderGeometry(radius, radius, .38, 24), new THREE.MeshStandardMaterial({ color, roughness: .5, metalness: i === 3 ? .6 : 0 }))
         band.rotation.z = Math.PI / 2
         band.position.x = [-2.15, -1, -.1, 2.15][i]
         body.add(band)
@@ -192,12 +197,25 @@ function buildStep(step: BoardStep, sockets: string[], part: Component | undefin
   return group
 }
 
+function webglAvailable() {
+  try {
+    const canvas = document.createElement('canvas')
+    return !!(canvas.getContext('webgl2') ?? canvas.getContext('webgl'))
+  } catch { return false }
+}
+
+const CURSOR_KEYS = new Set(['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'])
+
 export default function Board3D(props: Board3DProps) {
   const host = useRef<HTMLDivElement>(null)
-  const api = useRef<{ rebuild: (p: Board3DProps) => void; orbit: (angle: number) => void; reset: () => void } | null>(null)
-  const latest = useRef(props)
-  latest.current = props
+  const api = useRef<{ rebuild: (p: Scene) => void; orbit: (angle: number) => void; reset: () => void } | null>(null)
   const [ready, setReady] = useState(false)
+  const [cursor, setCursor] = useState<string>()
+  const [keyboard, setKeyboard] = useState(false)
+  const scene: Scene = { ...props, cursor: keyboard ? cursor : undefined }
+  const latest = useRef(scene)
+  latest.current = scene
+  const { t, geometry, onSocket } = props
 
   useEffect(() => {
     const element = host.current
@@ -216,96 +234,129 @@ export default function Board3D(props: Board3DProps) {
     labels.domElement.className = 'board3d-labels'
     element.appendChild(labels.domElement)
 
-    const scene = new THREE.Scene()
-    const camera = new THREE.PerspectiveCamera(34, 1, 1, 400)
-    const home = new THREE.Vector3(0, 56, 50)
-    camera.position.copy(home)
+    const world = new THREE.Scene()
+    const camera = new THREE.PerspectiveCamera(34, 1, 1, 1000)
     const controls = new OrbitControls(camera, renderer.domElement)
     controls.enableDamping = true
-    controls.minDistance = 30; controls.maxDistance = 140
     controls.maxPolarAngle = Math.PI * .46
-    controls.target.set(0, 0, -2)
-    scene.add(new THREE.HemisphereLight('#ffffff', '#3a4652', 1.5))
+    world.add(new THREE.HemisphereLight('#ffffff', '#3a4652', 1.5))
     const sun = new THREE.DirectionalLight('#ffffff', 2.2)
-    sun.position.set(-22, 50, 26); sun.castShadow = true
+    sun.castShadow = true
     sun.shadow.mapSize.set(2048, 2048)
-    Object.assign(sun.shadow.camera, { left: -45, right: 45, top: 30, bottom: -30, near: 1, far: 140 })
     sun.shadow.bias = -.0004; sun.shadow.radius = 4
-    scene.add(sun)
-
-    const surfaceCanvas = document.createElement('canvas')
-    surfaceCanvas.width = 2048; surfaceCanvas.height = Math.round(2048 * BODY.h / BODY.w)
-    const surface = new THREE.CanvasTexture(surfaceCanvas)
-    surface.colorSpace = THREE.SRGBColorSpace
-    surface.anisotropy = renderer.capabilities.getMaxAnisotropy()
-    const side = new THREE.MeshStandardMaterial({ color: '#c9d0d5', roughness: .7 })
-    const board = new THREE.Mesh(new RoundedSlab(BODY.w * S, BODY.h * S, 1.6, 1.4), [new THREE.MeshStandardMaterial({ map: surface, roughness: .72 }), side])
-    board.position.copy(world(BODY.x + BODY.w / 2, BODY.y + BODY.h / 2, -1.85))
-    board.receiveShadow = true
-    scene.add(board)
-    const floor = new THREE.Mesh(new THREE.PlaneGeometry(400, 400), new THREE.ShadowMaterial({ opacity: .22 }))
+    world.add(sun)
+    const floor = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.ShadowMaterial({ opacity: .22 }))
     floor.rotation.x = -Math.PI / 2; floor.position.y = -2.12; floor.receiveShadow = true
-    scene.add(floor)
-
+    world.add(floor)
+    const side = new THREE.MeshStandardMaterial({ color: '#cfd6db', roughness: .7 })
+    const surfaceCanvas = document.createElement('canvas')
     const mounted = new THREE.Group()
-    scene.add(mounted)
-    let dirty = true
+    world.add(mounted)
+
+    let board: THREE.Mesh | undefined, surface: THREE.CanvasTexture | undefined
+    let fitDistance = 100, boardKey = '', paintKey = '', mountKey = '', dirty = true
     function dispose(object: THREE.Object3D) {
       object.traverse(node => {
-        if (node instanceof THREE.Mesh) { node.geometry.dispose(); [node.material].flat().forEach(m => m.dispose()) }
+        if (node instanceof THREE.Mesh) { node.geometry.dispose(); [node.material].flat().forEach(m => { if (m !== side) m.dispose() }) }
         if (node instanceof THREE.Sprite) node.material.dispose()
         if (node instanceof CSS2DObject) node.element.remove()
       })
     }
-    function rebuild(p: Board3DProps) {
-      const c = boardPalettes[p.theme]
-      paintSurface(surfaceCanvas.getContext('2d')!, c, p)
-      surface.needsUpdate = true
-      side.color.set(p.theme === 'dark' ? '#9aa6ae' : '#cfd6db')
-      dispose(mounted); mounted.clear()
-      for (const step of p.steps) {
-        const sockets = p.visible[step.id]
-        if (!sockets) continue
-        const part = step.part ? p.parts.get(step.part) : undefined
-        mounted.add(buildStep(step, sockets, part, !!part && (p.currents?.[part.id] ?? 0) > .00005, !!part && p.selected.includes(part.id), c.selected))
-      }
+    /** Camera distance that fits the whole board, with room for the overlays, in the current viewport. */
+    function fit() {
+      const { width, height } = latest.current.geometry
+      const tanV = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)), tanH = tanV * camera.aspect
+      fitDistance = Math.max(width * S / 2 * 1.12 / tanH, height * S / 2 * .95 / tanV) * 1.08
+      controls.minDistance = fitDistance * .3; controls.maxDistance = fitDistance * 2.6
+      camera.far = fitDistance * 8; camera.updateProjectionMatrix()
+    }
+    function reset() {
+      controls.target.set(0, 0, 0)
+      fit()
+      camera.position.copy(HOME).multiplyScalar(fitDistance)
       dirty = true
+    }
+    function buildBoard(geometry: BoardGeometry) {
+      if (board) { world.remove(board); dispose(board); surface?.dispose() }
+      const { width, height } = geometry
+      surfaceCanvas.width = Math.min(renderer.capabilities.maxTextureSize, 4096, Math.round(width * 3))
+      surfaceCanvas.height = Math.round(surfaceCanvas.width * height / width)
+      surface = new THREE.CanvasTexture(surfaceCanvas)
+      surface.colorSpace = THREE.SRGBColorSpace
+      surface.anisotropy = renderer.capabilities.getMaxAnisotropy()
+      board = new THREE.Mesh(new RoundedSlab(width * S, height * S, 1.6, 1.4), [new THREE.MeshStandardMaterial({ map: surface, roughness: .72 }), side])
+      board.position.y = -1.85
+      board.receiveShadow = true
+      world.add(board)
+      const reach = Math.max(width, height) * S / 2 + 12
+      Object.assign(sun.shadow.camera, { left: -reach, right: reach, top: reach, bottom: -reach, near: 1, far: 400 })
+      sun.shadow.camera.updateProjectionMatrix()
+      sun.position.set(-reach * .5, 60, 30)
+      floor.scale.setScalar(reach * 8)
+      reset()
+    }
+    function rebuild(p: Scene) {
+      const c = boardPalettes[p.theme]
+      const nextBoard = `${p.geometry.width}x${p.geometry.height}`
+      if (nextBoard !== boardKey) { boardKey = nextBoard; paintKey = mountKey = ''; buildBoard(p.geometry) }
+      const nextPaint = JSON.stringify([p.theme, p.geometry.shape, p.labels, p.strip, p.probe, p.cursor])
+      if (nextPaint !== paintKey) {
+        paintKey = nextPaint
+        paintSurface(surfaceCanvas.getContext('2d')!, c, p)
+        surface!.needsUpdate = true
+        side.color.set(c.side)
+        dirty = true
+      }
+      const nextMount = JSON.stringify([p.theme, p.placements, p.selected, p.placements.map(item => {
+        const part = item.part ? p.parts.get(item.part) : undefined
+        return part && [part.kind, part.label, part.value, part.closed, isLit(part, p.currents)]
+      })])
+      if (nextMount !== mountKey) {
+        mountKey = nextMount
+        dispose(mounted); mounted.clear()
+        for (const item of p.placements) {
+          const part = item.part ? p.parts.get(item.part) : undefined
+          mounted.add(buildPlacement(item, p.geometry, part, isLit(part, p.currents), !!part && p.selected.includes(part.id), c.selected))
+        }
+        dirty = true
+      }
     }
     function resize() {
       const width = element!.clientWidth
       if (!width) return
-      const height = Math.round(Math.min(Math.max(width * (width < 640 ? .78 : .54), 280), 600))
+      const height = element!.clientHeight || Math.round(width * .56)
       renderer.setSize(width, height); labels.setSize(width, height)
       camera.aspect = width / height
-      // Fit the board width (plus margin) inside the horizontal field of view.
-      const halfFov = Math.atan(Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * camera.aspect)
-      const offset = camera.position.clone().sub(controls.target).setLength(41 / Math.tan(halfFov) * 1.08)
-      camera.position.copy(controls.target).add(offset)
-      camera.updateProjectionMatrix(); dirty = true
+      const distance = camera.position.distanceTo(controls.target)
+      const ratio = distance / fitDistance
+      fit()
+      camera.position.sub(controls.target).setLength((Number.isFinite(ratio) && ratio > 0 ? ratio : 1) * fitDistance).add(controls.target)
+      dirty = true
     }
+    rebuild(latest.current)
     const observer = new ResizeObserver(resize)
     observer.observe(element)
     resize()
     controls.addEventListener('change', () => { dirty = true })
     renderer.setAnimationLoop(() => {
-      if (controls.update() || dirty) { renderer.render(scene, camera); labels.render(scene, camera); dirty = false }
+      if (controls.update() || dirty) { renderer.render(world, camera); labels.render(world, camera); dirty = false }
     })
 
     const pointer = new THREE.Vector2(), ray = new THREE.Raycaster()
     let down: { x: number; y: number } | null = null
-    const onDown = (event: PointerEvent) => { down = { x: event.clientX, y: event.clientY } }
+    const onDown = (event: PointerEvent) => { down = { x: event.clientX, y: event.clientY }; setKeyboard(false) }
     const onUp = (event: PointerEvent) => {
       if (!down || Math.hypot(event.clientX - down.x, event.clientY - down.y) > 5) { down = null; return }
       down = null
       const rect = renderer.domElement.getBoundingClientRect()
       pointer.set((event.clientX - rect.left) / rect.width * 2 - 1, -(event.clientY - rect.top) / rect.height * 2 + 1)
       ray.setFromCamera(pointer, camera)
-      const hit = ray.intersectObjects([...mounted.children, board], true)[0]
+      const hit = ray.intersectObjects(board ? [...mounted.children, board] : mounted.children, true)[0]
       if (!hit) return
       if (hit.object.userData.part) { latest.current.onPart(hit.object.userData.part); return }
-      const x = hit.point.x / S + 380, y = hit.point.z / S + 230.5
-      const socket = nearestSocket(x, y)
-      if (socket) latest.current.onSocket(socket)
+      const { geometry } = latest.current
+      const socket = geometry.nearestSocket(hit.point.x / S + geometry.width / 2, hit.point.z / S + geometry.height / 2)
+      if (socket) { setCursor(socket); latest.current.onSocket(socket) }
     }
     renderer.domElement.addEventListener('pointerdown', onDown)
     renderer.domElement.addEventListener('pointerup', onUp)
@@ -316,25 +367,39 @@ export default function Board3D(props: Board3DProps) {
         const offset = camera.position.clone().sub(controls.target).applyAxisAngle(new THREE.Vector3(0, 1, 0), angle)
         camera.position.copy(controls.target).add(offset); dirty = true
       },
-      reset() { controls.target.set(0, 0, -2); camera.position.copy(home); resize() },
+      reset,
     }
-    rebuild(latest.current)
     setReady(true)
     return () => {
       api.current = null
       renderer.setAnimationLoop(null)
       observer.disconnect(); controls.dispose()
-      dispose(scene); surface.dispose()
+      dispose(world); side.dispose(); surface?.dispose()
       renderer.dispose(); renderer.forceContextLoss()
       renderer.domElement.remove(); labels.domElement.remove()
     }
   }, [])
 
-  useEffect(() => { api.current?.rebuild(props) })
+  useEffect(() => { api.current?.rebuild(latest.current) })
 
-  const { t } = props
-  return <div className="board3d" ref={host} role="img" aria-roledescription={t('3D model')}
-    aria-label={t('3D breadboard. Drag to orbit, scroll to zoom, click a socket to probe it.')}>
+  const active = cursor && geometry.hole(cursor) ? cursor : props.probe && geometry.hole(props.probe) ? props.probe : `${TERMINAL_ROWS[0]}1`
+  function onKeyDown(event: KeyboardEvent<HTMLDivElement>) {
+    if (CURSOR_KEYS.has(event.key)) {
+      event.preventDefault()
+      setKeyboard(true)
+      setCursor(keyboard ? geometry.move(active, event.key as CursorKey) : active)
+    } else if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault()
+      setKeyboard(true); setCursor(active)
+      onSocket(active)
+    }
+  }
+
+  return <div className="board3d">
+    <div className="board3d-scene" ref={host} tabIndex={0} role="application" aria-roledescription={t('3D breadboard')}
+      aria-label={t('Breadboard. Drag to orbit and scroll to zoom. Use the arrow keys to choose a socket and Enter to probe it.')}
+      onKeyDown={onKeyDown} onFocus={event => { setCursor(active); if (event.currentTarget.matches(':focus-visible')) setKeyboard(true) }} onBlur={() => setKeyboard(false)} />
+    <span className="sr-only" aria-live="polite">{keyboard && cursor ? `${t('Socket')} ${cursor}` : ''}</span>
     <div className="board3d-controls" data-ready={ready}>
       <Button size="icon-sm" variant="outline" aria-label={t('Orbit left')} onClick={() => api.current?.orbit(-Math.PI / 12)}><RotateCcw /></Button>
       <Button size="icon-sm" variant="outline" aria-label={t('Orbit right')} onClick={() => api.current?.orbit(Math.PI / 12)}><RotateCw /></Button>

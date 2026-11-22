@@ -1,4 +1,4 @@
-import type { PointerEvent as ReactPointerEvent, RefObject } from 'react'
+import { useLayoutEffect, useState, type PointerEvent as ReactPointerEvent, type RefObject } from 'react'
 import { endpointPosition, route, terminal, type Circuit, type Component, type Endpoint, type Point, type Wire } from '../circuit/model'
 import { metric, catalog } from './catalog'
 import type { Translate } from '../locale'
@@ -37,6 +37,42 @@ export type CanvasProps = {
   box: { start: Point; end: Point } | null
   onMove: (event: ReactPointerEvent) => void
   onUp: (event: ReactPointerEvent) => void
+  /** Screen pixels covered by floating chrome at the top and bottom; the drawing is centred in the remaining area. */
+  inset?: { top: number; bottom: number }
+}
+type Frame = { x: number; y: number; width: number; height: number }
+const DRAWING = { width: 800, height: 540 }
+const MAX_SCALE = 1.25
+
+/**
+ * The editor works in an 800 × 540 drawing space. The SVG fills its container, so the view box grows with the
+ * screen while keeping the drawing centre (400, 270) in the middle of the uncovered area. Pointer math uses
+ * getScreenCTM, so it stays correct for any frame.
+ */
+export function frameFor(size: { width: number; height: number } | null, inset = { top: 0, bottom: 0 }): Frame {
+  if (!size || size.width <= 0 || size.height <= 0) return { x: 0, y: 0, ...DRAWING }
+  const usable = Math.max(1, size.height - inset.top - inset.bottom)
+  const scale = Math.min(size.width / DRAWING.width, usable / DRAWING.height, MAX_SCALE)
+  const width = size.width / scale, height = size.height / scale
+  return { x: DRAWING.width / 2 - width / 2, y: DRAWING.height / 2 - (inset.top + usable / 2) / scale, width, height }
+}
+
+function useSize(svg: RefObject<SVGSVGElement | null>) {
+  const [size, setSize] = useState<{ width: number; height: number } | null>(null)
+  useLayoutEffect(() => {
+    const element = svg.current
+    if (!element) return
+    const measure = () => {
+      const { width, height } = element.getBoundingClientRect()
+      setSize(previous => previous?.width === width && previous.height === height ? previous : { width, height })
+    }
+    measure()
+    if (typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(measure)
+    observer.observe(element)
+    return () => observer.disconnect()
+  }, [svg])
+  return size
 }
 const coord = ({ x, y }: Point) => `${x},${y}`
 const pathFor = (points: Point[]) => points.map((p, index) => `${index ? 'L' : 'M'}${coord(p)}`).join(' ')
@@ -44,6 +80,7 @@ const endpointKey = (endpoint: Endpoint) => 'component' in endpoint ? `${endpoin
 
 export default function Canvas(props: CanvasProps) {
   const { t, palette: c, svg, circuit, view, wireFrom, cursor, readings, pins, nodes, showVoltage, showNodes } = props
+  const frame = frameFor(useSize(svg), props.inset)
   const draft = wireFrom && cursor ? (() => {
     const start = endpointPosition(circuit, wireFrom)
     return pathFor([start, { x: cursor.x, y: start.y }, cursor])
@@ -51,14 +88,14 @@ export default function Canvas(props: CanvasProps) {
   const hidden = new Set(circuit.components.filter(c => c.kind === 'ground' && !props.showGround).map(c => c.id))
   const volts = (endpoint: Endpoint) => nodes[pins[endpointKey(endpoint)]]
   const voltageColor = (value: number | undefined) => value === undefined ? undefined : value === 0 ? c.zero : value > 0 ? c.positive : c.negative
-  return <svg ref={svg} className={`schematic mode-${props.mode}`} viewBox="0 0 800 540" xmlns="http://www.w3.org/2000/svg"
+  return <svg ref={svg} className={`schematic mode-${props.mode}`} viewBox={`${frame.x} ${frame.y} ${frame.width} ${frame.height}`} xmlns="http://www.w3.org/2000/svg"
     aria-label={t('Interactive circuit schematic')} role="group" onPointerMove={props.onMove} onPointerUp={props.onUp} onPointerCancel={props.onUp}
     onPointerDown={props.onBackground}>
     <defs>
       <pattern id="minor-grid" width="20" height="20" patternUnits="userSpaceOnUse"><circle cx="1" cy="1" r="1" fill={c.gridMinor} /></pattern>
       <pattern id="major-grid" width="100" height="100" patternUnits="userSpaceOnUse"><rect width="100" height="100" fill="url(#minor-grid)" /><circle cx="1" cy="1" r="1.45" fill={c.gridMajor} /></pattern>
     </defs>
-    <rect width="100%" height="100%" fill={c.canvas} />
+    <rect x={frame.x} y={frame.y} width={frame.width} height={frame.height} fill={c.canvas} />
     <g transform={`translate(${view.x} ${view.y}) scale(${view.scale})`}>
       <rect x="-20000" y="-20000" width="40000" height="40000" fill="url(#major-grid)" />
       {circuit.wires.map(wire => {

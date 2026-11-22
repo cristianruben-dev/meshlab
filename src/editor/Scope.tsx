@@ -1,4 +1,4 @@
-import { Activity, RotateCcw } from 'lucide-react'
+import { RotateCcw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import type { Component } from '../circuit/model'
@@ -21,9 +21,9 @@ export default function Scope({ t, palette: c, samples, time, parts, probe, onPr
   const y = (v: number) => 137 - (v - min) / (max - min) * 108
   const points = readings.map(p => `${x(p.time)},${y(p.volts)}`).join(' ')
   const divisions = [0, .25, .5, .75, 1]
-  return <section className="surface scope">
-    <div className="scope-heading">
-      <h2><Activity size={17} /> {t('Oscilloscope')}</h2>
+  // Rendered inside the Oscilloscope panel, which provides the heading.
+  return <div className="scope">
+    <div className="scope-controls">
       <output aria-label={t('Simulation time')}>{metric(time, 's')}</output>
       <Select value={probe} items={Object.fromEntries(parts.map(c => [c.id, c.label]))} onValueChange={id => { if (id) onProbe(id) }}>
         <SelectTrigger aria-label={t('Voltage probe')}><SelectValue /></SelectTrigger>
@@ -44,5 +44,5 @@ export default function Scope({ t, palette: c, samples, time, parts, probe, onPr
       })}
       {readings.length > 1 && <polyline className="scope-trace" points={points} fill="none" stroke={c.trace} strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round" />}
     </svg>
-  </section>
+  </div>
 }

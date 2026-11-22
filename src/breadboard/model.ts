@@ -1,101 +1,146 @@
 import { compile, type Circuit } from '../circuit/model'
 import { examples } from '../circuit/examples'
+import type { BoardSettings } from './settings'
 
-export const ROWS = ['T+', 'T-', 'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'B+', 'B-'] as const
-export const COLUMNS = 20
-export type BoardStep = { id: string; part?: string; label: string; sockets: string[]; color: string }
-export type Guide = { example: string; steps: BoardStep[] }
-export type Assembly = Record<string, string[]>
-export type PlacementIssue = 'incomplete' | 'occupied' | 'same-strip' | 'wrong-strip'
+export const TERMINAL_ROWS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J'] as const
+export const RAIL_ROWS = ['T+', 'T-', 'B+', 'B-'] as const
 
-const part = (id: string, label: string, sockets: string[]): BoardStep => ({ id, part: id, label, sockets, color: '#da9f57' })
-const jumper = (id: string, label: string, sockets: string[], color: string): BoardStep => ({ id, label, sockets, color })
-const supply = () => part('V1', 'Power supply', ['T+2', 'B-2'])
-const ground = () => part('GND', 'Ground reference', ['B-4'])
-const positive = () => jumper('feed', 'Positive jumper', ['T+4', 'A4'], '#f77c83')
-const bridge = (a: string, b: string) => jumper('bridge', 'Bridge the center gap', [a, b], '#36c99d')
-const returnLead = (column: number) => jumper('return', 'Return jumper', [`J${column}`, `B-${column}`], '#619eff')
+/** Physical layout of one board: terminal columns and sockets per power rail (0 when the board has no rails). */
+export type BoardShape = { columns: number; railLength: number; split: boolean }
+/** One mounted part (with `part`) or jumper wire (without it); sockets follow the part's pin order. */
+export type Placement = { id: string; part?: string; sockets: string[]; color?: string }
+export type Guide = { example: string; place: (shape: BoardShape) => Placement[] }
+type Pins = Record<string, string>
 
+export function boardShape({ size, rails, splitRails }: BoardSettings): BoardShape {
+  if (size === 'mini') return { columns: 17, railLength: 0, split: false }
+  if (size === 'half') return { columns: 30, railLength: rails ? 25 : 0, split: false }
+  return { columns: 63, railLength: rails ? 50 : 0, split: rails && splitRails }
+}
+
+export const tiePoints = (shape: BoardShape) => shape.columns * TERMINAL_ROWS.length + RAIL_ROWS.length * shape.railLength
+export const boardRows = (shape: BoardShape): string[] =>
+  shape.railLength ? ['T+', 'T-', ...TERMINAL_ROWS, 'B+', 'B-'] : [...TERMINAL_ROWS]
+
+/** Horizontal position of a rail socket, in pitches from column 1. Rails come in groups of five, centered on the columns. */
+export function railPosition(shape: BoardShape, index: number) {
+  const offset = (i: number) => Math.floor((i - 1) / 5) * 6 + (i - 1) % 5 + (shape.split && i > shape.railLength / 2 ? 1 : 0)
+  return offset(index) + (shape.columns - 1 - offset(shape.railLength)) / 2
+}
+
+/** Rail socket closest to a terminal column. */
+export function railNear(shape: BoardShape, column: number) {
+  let best = 1
+  for (let i = 2; i <= shape.railLength; i++)
+    if (Math.abs(railPosition(shape, i) - (column - 1)) < Math.abs(railPosition(shape, best) - (column - 1))) best = i
+  return best
+}
+
+/** Conductive group of a socket, or undefined when the socket does not exist on this board. */
+export function holeGroup(shape: BoardShape, hole: string) {
+  const match = /^(T[+-]|B[+-]|[A-J])([1-9]\d*)$/.exec(hole)
+  if (!match) return undefined
+  const [, row, text] = match, index = Number(text)
+  if (row.length === 2) {
+    if (index > shape.railLength) return undefined
+    return shape.split ? `${row}:${index > shape.railLength / 2 ? 2 : 1}` : row
+  }
+  if (index > shape.columns) return undefined
+  return `${row <= 'E' ? 'upper' : 'lower'}:${index}`
+}
+
+const part = (id: string, ...sockets: string[]): Placement => ({ id, part: id, sockets })
+const jumper = (id: string, color: string, ...sockets: string[]): Placement => ({ id, color, sockets })
+const red = '#f77c83', green = '#36c99d', blue = '#619eff'
+
+/** Centers a layout `span` columns wide and wires its supply either to the rails or straight into the strips. */
+function layout(span: number, build: (column: (offset: number) => number, power: Power) => Placement[]) {
+  return (shape: BoardShape) => {
+    const first = Math.floor((shape.columns - span) / 2) + 1
+    const column = (offset: number) => first + offset
+    const placements = build(column, shape.railLength ? railPower(shape) : stripPower)
+    if (shape.split) {
+      const half = shape.railLength / 2
+      placements.push(jumper('rail-plus', red, `T+${half}`, `T+${half + 1}`), jumper('rail-minus', blue, `B-${half}`, `B-${half + 1}`))
+    }
+    return placements
+  }
+}
+
+/** Connects the supply to the first column (upper strip) and the return column (lower strip). */
+type Power = (first: number, last: number) => Placement[]
+/** Supply and ground on the rails, with a feed jumper to the first column and a return jumper to the negative rail. */
+const railPower = (shape: BoardShape): Power => (first, last) => {
+  const rail = railNear(shape, first - 1)
+  return [
+    part('V1', `T+${rail}`, `B-${rail}`), part('GND', `B-${rail + 3}`), jumper('feed', red, `T+${rail + 2}`, `A${first}`),
+    jumper('return', blue, `J${last}`, `B-${railNear(shape, last)}`),
+  ]
+}
+/** Without rails, the supply leads and ground go straight into the strips of the first and return columns. */
+const stripPower: Power = (first, last) => [part('V1', `A${first}`, `J${last}`), part('GND', `G${last}`)]
+
+/** Assembled reference layouts; each one is generated for the chosen board. */
 export const boardGuides: Guide[] = [
-  { example: 'Voltage Divider', steps: [
-    supply(), ground(), positive(), part('R1', 'Upper resistor', ['C4', 'C10']), bridge('E10', 'F10'),
-    part('R2', 'Lower resistor', ['H10', 'H17']), returnLead(17),
-  ] },
-  { example: 'LED + Switch', steps: [
-    supply(), ground(), positive(), part('S1', 'Switch module', ['C4', 'C7']),
-    part('R1', 'Series resistor', ['E7', 'E12']), bridge('D12', 'G12'),
-    part('D1', 'LED (anode first)', ['H12', 'H14']), returnLead(14),
-  ] },
+  { example: 'Voltage Divider', place: layout(15, (c, power) => [
+    ...power(c(0), c(13)), part('R1', `C${c(0)}`, `C${c(6)}`), jumper('bridge', green, `E${c(6)}`, `F${c(6)}`),
+    part('R2', `H${c(6)}`, `H${c(13)}`),
+  ]) },
+  { example: 'LED + Switch', place: layout(13, (c, power) => [
+    ...power(c(0), c(10)), part('S1', `C${c(0)}`, `C${c(3)}`), part('R1', `E${c(3)}`, `E${c(8)}`),
+    jumper('bridge', green, `D${c(8)}`, `G${c(8)}`), part('D1', `H${c(8)}`, `H${c(10)}`),
+  ]) },
 ]
 
-export function holeGroup(hole: string) {
-  const match = /^(T[+-]|B[+-]|[A-J])([1-9]\d*)$/.exec(hole)
-  if (!match || Number(match[2]) > COLUMNS) return undefined
-  return match[1].length === 2 ? match[1] : `${match[1] <= 'E' ? 'upper' : 'lower'}:${match[2]}`
-}
-
-export function populated(guide: Guide): Assembly {
-  return Object.fromEntries(guide.steps.map(step => [step.id, [...step.sockets]]))
-}
-
-export function validateStep(step: BoardStep, chosen: string[], assembly: Assembly): PlacementIssue | undefined {
-  if (chosen.length !== step.sockets.length) return 'incomplete'
-  const used = new Set(Object.entries(assembly).filter(([id]) => id !== step.id).flatMap(([, holes]) => holes))
-  if (new Set(chosen).size !== chosen.length || chosen.some(hole => used.has(hole))) return 'occupied'
-  const groups = chosen.map(holeGroup)
-  if (groups.length === 2 && groups[0] && groups[0] === groups[1]) return 'same-strip'
-  if (groups.some((group, index) => !group || group !== holeGroup(step.sockets[index]))) return 'wrong-strip'
-}
-
-type Pins = Record<string, string>
-function groupRoots(guide: Guide, assembly: Assembly) {
+function groupRoots(shape: BoardShape, placements: Placement[]) {
   const roots = new Map<string, string>()
   function root(group: string): string {
     const parent = roots.get(group)
     return parent ? root(parent) : group
   }
-  for (const step of guide.steps) {
-    const holes = assembly[step.id]
-    if (step.part || !holes || holes.length !== 2) continue
-    const a = holeGroup(holes[0]), b = holeGroup(holes[1])
+  for (const item of placements) {
+    if (item.part || item.sockets.length !== 2) continue
+    const a = holeGroup(shape, item.sockets[0]), b = holeGroup(shape, item.sockets[1])
     if (a && b && root(a) !== root(b)) roots.set(root(a), root(b))
   }
   return root
 }
 
-function socketsWithPins(guide: Guide, assembly: Assembly) {
-  return guide.steps.flatMap(step => step.part
-    ? (assembly[step.id] ?? []).map((hole, index) => ({ hole, pin: `${step.part}:${index}` }))
-    : [])
-}
+const partSockets = (placements: Placement[]) =>
+  placements.flatMap(item => item.part ? item.sockets.map((hole, index) => ({ hole, pin: `${item.part}:${index}` })) : [])
 
 function equivalent(a: readonly string[], b: readonly string[]) {
   return a.length === b.length && a.every((value, index) =>
     a.every((other, second) => (value === other) === (b[index] === b[second])))
 }
 
-export function verifyBoard(guide: Guide, assembly: Assembly, pins: Pins): boolean {
-  if (guide.steps.some(step => validateStep(step, assembly[step.id] ?? [], assembly))) return false
-  const sockets = socketsWithPins(guide, assembly)
-  const root = groupRoots(guide, assembly)
+/** True when every socket exists and is used once, and the board's conductive groups match the schematic's nodes. */
+export function verifyBoard(shape: BoardShape, placements: Placement[], pins: Pins): boolean {
+  const holes = placements.flatMap(item => item.sockets)
+  if (new Set(holes).size !== holes.length || holes.some(hole => !holeGroup(shape, hole))) return false
+  const sockets = partSockets(placements)
+  const root = groupRoots(shape, placements)
   return sockets.every(({ pin }) => pins[pin] !== undefined) &&
-    equivalent(sockets.map(({ hole }) => root(holeGroup(hole)!)), sockets.map(({ pin }) => pins[pin]))
+    equivalent(sockets.map(({ hole }) => root(holeGroup(shape, hole)!)), sockets.map(({ pin }) => pins[pin]))
 }
 
-export function probeNode(guide: Guide, assembly: Assembly, pins: Pins, hole: string) {
-  const group = holeGroup(hole)
-  if (!group || !verifyBoard(guide, assembly, pins)) return undefined
-  const root = groupRoots(guide, assembly)
-  const match = socketsWithPins(guide, assembly).find(socket => root(holeGroup(socket.hole)!) === root(group))
+/** Circuit node measured at a socket, or undefined when nothing connects to it or the layout is invalid. */
+export function probeNode(shape: BoardShape, placements: Placement[], pins: Pins, hole: string) {
+  const group = holeGroup(shape, hole)
+  if (!group || !verifyBoard(shape, placements, pins)) return undefined
+  const root = groupRoots(shape, placements)
+  const match = partSockets(placements).find(socket => root(holeGroup(shape, socket.hole)!) === root(group))
   return match && pins[match.pin]
 }
 
+const referenceShape: BoardShape = { columns: 30, railLength: 25, split: false }
+/** Guide whose example has the same parts and node structure as the circuit (positions and values may differ). */
 export function matchesGuide(circuit: Circuit, pins = compile(circuit).nodeByPin) {
   return boardGuides.find(guide => {
     const original = examples[guide.example]
     if (original.components.length !== circuit.components.length ||
       !original.components.every(c => circuit.components.some(p => c.id === p.id && c.kind === p.kind))) return false
-    const current = socketsWithPins(guide, populated(guide)).map(({ pin }) => pin)
+    const current = partSockets(guide.place(referenceShape)).map(({ pin }) => pin)
     const reference = compile(original).nodeByPin
     return current.every(pin => pins[pin] !== undefined && ((pins[pin] === '0') === (reference[pin] === '0'))) &&
       equivalent(current.map(pin => pins[pin]), current.map(pin => reference[pin]))

@@ -1,114 +1,87 @@
-import { readFile } from 'node:fs/promises'
-import { expect, test, type Locator, type Page } from '@playwright/test'
-import type { Circuit } from '../src/circuit/model'
+import { expect, test, type Page } from '@playwright/test'
+import { examples } from '../src/circuit/examples'
+import { boardGuides, boardRows, boardShape } from '../src/breadboard/model'
+import { defaultBoardSettings, type BoardSettings } from '../src/breadboard/settings'
 
-const schematic = (page: Page) => page.getByRole('group', { name: 'Interactive circuit schematic' })
+const scene = (page: Page) => page.getByRole('application', { name: /Breadboard\. Drag to orbit/ })
+const probe = (page: Page) => page.locator('.board-probe [role="status"]')
 
-async function screenPoint(canvas: Locator, x: number, y: number) {
-  return canvas.locator(':scope > g').evaluate((layer: SVGGElement, point) => {
-    const matrix = layer.getScreenCTM()
-    if (!matrix) throw new Error('The schematic is not rendered.')
-    const screen = new DOMPoint(point.x, point.y).matrixTransform(matrix)
-    return { x: screen.x, y: screen.y }
-  }, { x, y })
-}
-
-async function clickAt(page: Page, x: number, y: number) {
-  const point = await screenPoint(schematic(page), x, y)
-  await page.mouse.click(point.x, point.y)
-}
-
-async function downloadFile(page: Page, button: 'JSON' | 'PNG', filename: string) {
-  const [download] = await Promise.all([
-    page.waitForEvent('download'),
-    page.getByRole('button', { name: button, exact: true }).click(),
-  ])
-  expect(download.suggestedFilename()).toBe(filename)
-  return readFile(await download.path())
-}
-
-test.beforeEach(async ({ page }) => {
+async function openBoard(page: Page, { settings, circuit, language }: { settings?: BoardSettings; circuit?: string; language?: 'es' } = {}) {
+  await page.addInitScript(([settings, circuit, language]) => {
+    if (settings) localStorage.setItem('meshlab:board', settings)
+    if (circuit) localStorage.setItem('meshlab:circuit:v1', circuit)
+    if (language) localStorage.setItem('meshlab:language', language)
+  }, [settings && JSON.stringify(settings), circuit && JSON.stringify(examples[circuit]), language] as const)
   await page.goto('/')
-  await expect(schematic(page)).toBeVisible()
-})
+  await page.getByRole('button', { name: language === 'es' ? 'Protoboard' : 'Breadboard', exact: true }).click()
+}
 
-test('probes the divider on the breadboard and synchronizes selected components', async ({ page }) => {
-  await page.getByRole('button', { name: 'Breadboard', exact: true }).click()
-  const board = page.getByRole('group', { name: 'Interactive breadboard' })
-  await expect(board).toBeVisible()
-  await board.getByRole('button', { name: 'Socket H10', exact: true }).click()
-  await expect(page.getByRole('status').filter({ hasText: 'H10' })).toHaveText('H10 · 8 V')
+/** Moves the keyboard cursor from A1 to a socket in a terminal row and probes it. */
+async function probeWithKeyboard(page: Page, settings: BoardSettings, socket: string) {
+  const rows = boardRows(boardShape(settings))
+  const [, row, column] = /^([A-J])(\d+)$/.exec(socket)!
+  await scene(page).focus()
+  await page.keyboard.press('Enter')
+  await expect(probe(page)).toContainText('A1 ·')
+  for (let i = 1; i < Number(column); i++) await page.keyboard.press('ArrowRight')
+  for (let i = rows.indexOf('A'); i < rows.indexOf(row); i++) await page.keyboard.press('ArrowDown')
+  await page.keyboard.press('Enter')
+}
+
+test('probes the divider with the keyboard and selects parts from the 3D board', async ({ page }) => {
+  await openBoard(page)
+  await expect(scene(page).locator('canvas')).toBeVisible()
+  await expect(probe(page)).toHaveText('Select a socket')
+  const divider = boardGuides.find(guide => guide.example === 'Voltage Divider')!
+  const r2 = divider.place(boardShape(defaultBoardSettings)).find(item => item.part === 'R2')!.sockets[0]
+  await probeWithKeyboard(page, defaultBoardSettings, r2)
+  await expect(probe(page)).toHaveText(`${r2} · 8 V`)
   await expect(page.getByRole('textbox', { name: 'Label' })).toHaveValue('R2')
-  await board.getByRole('button', { name: 'Socket E10', exact: true }).click()
-  await expect(page.getByRole('status').filter({ hasText: 'E10' })).toHaveText('E10 · 8 V')
-  const value = page.getByRole('textbox', { name: 'Value', exact: true })
-  await value.fill('1 kΩ')
-  await value.press('Enter')
-  await expect(page.getByRole('status').filter({ hasText: 'E10' })).toHaveText('E10 · 6 V')
-  await board.getByRole('button', { name: 'Socket T-10', exact: true }).click()
-  await expect(page.getByRole('status').filter({ hasText: 'T-10' })).toHaveText('T-10 · Not connected')
-  await page.getByRole('button', { name: 'Schematic', exact: true }).click()
-  await expect(schematic(page)).toBeVisible()
-  await expect(page.getByRole('textbox', { name: 'Label' })).toHaveValue('R2')
-})
 
-test('finds same-strip faults, retains progress when switching views, then verifies a divider build', async ({ page }) => {
-  await page.getByRole('button', { name: 'Breadboard', exact: true }).click()
-  await page.getByRole('button', { name: 'Start assembly' }).click()
-  const board = page.getByRole('group', { name: 'Interactive breadboard' })
-  const click = (socket: string) => board.getByRole('button', { name: `Socket ${socket}`, exact: true }).click()
-  const check = page.getByRole('button', { name: 'Check placement' })
-  await click('T+2')
-  await click('T+3')
-  await check.click()
-  await expect(page.getByRole('alert')).toContainText('same conductive strip')
-  await click('T+3')
-  await click('B-2')
-  await check.click()
-  const progress = page.getByRole('progressbar', { name: 'Assembly progress' })
-  await expect(progress).toHaveAttribute('value', '1')
-  await page.getByRole('button', { name: 'Schematic', exact: true }).click()
-  await page.getByRole('button', { name: 'Breadboard', exact: true }).click()
-  await expect(progress).toHaveAttribute('value', '1')
-  for (const group of [['B-4'], ['T+4', 'A4'], ['C4', 'C10'], ['E10', 'F10'], ['H10', 'H17'], ['J17', 'B-17']]) {
-    for (const socket of group) await click(socket)
-    await check.click()
-  }
-  await expect(page.getByRole('heading', { name: 'Assembly verified' })).toBeVisible()
-  await click('I10')
-  await expect(page.getByRole('status').filter({ hasText: 'I10' })).toHaveText('I10 · 8 V')
-})
-
-test('loads and operates the LED guide on a narrow Spanish viewport', async ({ page }) => {
-  await page.setViewportSize({ width: 390, height: 844 })
-  await page.getByRole('combobox', { name: 'Language' }).click()
-  await page.getByRole('option', { name: 'Español' }).click()
-  await page.getByRole('button', { name: 'Protoboard', exact: true }).click()
-  await page.getByRole('button', { name: 'LED e interruptor' }).click()
-  const board = page.getByRole('group', { name: 'Protoboard interactiva' })
-  await expect(board).toBeVisible()
-  await page.getByRole('button', { name: 'Abrir interruptor' }).click()
-  await expect(page.getByRole('button', { name: 'Cerrar interruptor' })).toBeVisible()
-  await expect(page.getByRole('row', { name: /^D1\b/ })).toContainText('0 A')
-  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBe(0)
-})
-
-test('renders the optional 3D breadboard, selects a part from it, and returns to the 2D probe', async ({ page }) => {
-  await page.getByRole('button', { name: 'Breadboard', exact: true }).click()
-  const board = page.getByRole('group', { name: 'Interactive breadboard' })
-  await board.getByRole('button', { name: 'Socket H10', exact: true }).click()
-  await page.getByRole('button', { name: '3D view', exact: true }).click()
-  const model = page.getByRole('img', { name: /3D breadboard/ })
-  await expect(model.locator('canvas')).toBeVisible()
-  await expect(board).toBeHidden()
-  const tag = model.locator('.board3d-label', { hasText: 'R1' })
+  const tag = scene(page).locator('.board3d-label', { hasText: 'R1' })
   await expect(tag).toBeVisible()
   const box = (await tag.boundingBox())!
   await page.mouse.click(box.x + box.width / 2, box.y + box.height + 9)
   await expect(page.getByRole('textbox', { name: 'Label' })).toHaveValue('R1')
   await page.getByRole('button', { name: 'Orbit right' }).click()
   await page.getByRole('button', { name: 'Reset 3D view' }).click()
-  await expect(page.getByRole('status').filter({ hasText: 'H10' })).toHaveText('H10 · 8 V')
-  await page.getByRole('button', { name: '2D view', exact: true }).click()
-  await expect(board.getByRole('button', { name: 'Socket H10', exact: true })).toBeVisible()
+  await expect(probe(page)).toHaveText(`${r2} · 8 V`)
+})
+
+test('restores the saved board size and changes it from the breadboard settings', async ({ page }) => {
+  const full = { ...defaultBoardSettings, size: 'full', splitRails: true } as const
+  await openBoard(page, { settings: full })
+  await expect(page.locator('.board')).toHaveAttribute('data-size', 'full')
+  const mini = page.getByRole('radio', { name: /Mini.*170/ })
+  await expect(page.getByRole('radio', { name: /Full.*830/ })).toBeChecked()
+  await mini.check()
+  await expect(page.locator('.board')).toHaveAttribute('data-size', 'mini')
+  const settings = { ...full, size: 'mini' } as const
+  const divider = boardGuides.find(guide => guide.example === 'Voltage Divider')!
+  const supply = divider.place(boardShape(settings)).find(item => item.part === 'V1')!.sockets[0]
+  await probeWithKeyboard(page, settings, supply)
+  await expect(probe(page)).toHaveText(`${supply} · 12 V`)
+  await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('meshlab:board') ?? '{}').size)).toBe('mini')
+})
+
+test('operates the LED example on a narrow Spanish viewport', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await openBoard(page, { circuit: 'LED + Switch', language: 'es' })
+  await expect(page.getByRole('application', { name: /^Protoboard\./ }).locator('canvas')).toBeVisible()
+  await page.getByRole('button', { name: 'Abrir interruptor' }).click()
+  await expect(page.getByRole('button', { name: 'Cerrar interruptor' })).toBeVisible()
+  await expect(probe(page)).toHaveText('Selecciona un orificio')
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBe(0)
+})
+
+test('explains that the board needs WebGL when the browser has none', async ({ page }) => {
+  await page.addInitScript(() => {
+    const original = HTMLCanvasElement.prototype.getContext
+    HTMLCanvasElement.prototype.getContext = function (this: HTMLCanvasElement, type: string, ...rest: unknown[]) {
+      return type.startsWith('webgl') ? null : original.call(this, type as '2d', ...(rest as []))
+    } as typeof original
+  })
+  await openBoard(page)
+  await expect(page.getByRole('status').filter({ hasText: 'WebGL' })).toHaveText('The 3D breadboard needs WebGL, which is not available in this browser.')
+  await expect(scene(page)).toHaveCount(0)
 })

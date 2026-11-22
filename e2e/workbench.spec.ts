@@ -133,11 +133,75 @@ test('imports a valid JSON file and preserves it after invalid JSON is rejected'
 test('fits the workbench in a narrow viewport without horizontal document overflow', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
   await expect(schematic(page)).toBeVisible()
-  await expect(page.getByRole('heading', { name: 'Properties' })).toBeVisible()
+  const panels = page.getByRole('navigation', { name: 'Panels' })
+  await panels.getByRole('button', { name: 'Inspector', exact: true }).click()
+  const inspector = page.getByRole('region', { name: 'Properties' })
+  await expect(inspector.getByRole('heading', { name: 'Properties' })).toBeVisible()
+  // Phone panels are bottom sheets that cannot be pinned and stay inside the viewport.
+  await expect(inspector.getByRole('button', { name: 'Pin Inspector' })).toHaveCount(0)
+  const box = (await inspector.boundingBox())!
+  expect(box.x).toBeGreaterThanOrEqual(0)
+  expect(box.x + box.width).toBeLessThanOrEqual(390)
+  await panels.getByRole('button', { name: 'Results', exact: true }).click()
+  await expect(inspector).toHaveCount(0)
+  await expect(page.getByRole('table', { name: 'Component readings' })).toBeVisible()
   await expect.poll(() => page.evaluate(() => {
     const { clientWidth, scrollWidth } = document.documentElement
     return scrollWidth - clientWidth
   })).toBe(0)
+})
+
+test('fills the viewport with the editor and keeps the page itself from scrolling', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 })
+  const size = await schematic(page).boundingBox()
+  const dockLeft = await page.getByRole('region', { name: 'Components' }).boundingBox()
+  expect(size!.height).toBe(900)
+  expect(size!.x).toBeGreaterThanOrEqual(dockLeft!.x + dockLeft!.width - 1)
+  expect(await page.evaluate(() => document.documentElement.scrollHeight - document.documentElement.clientHeight)).toBe(0)
+})
+
+test('pins and unpins panels, docking the editor, and restores the layout after reload', async ({ page }) => {
+  const canvas = schematic(page)
+  const docked = (await canvas.boundingBox())!
+  const pin = page.getByRole('button', { name: 'Pin Library' })
+  await expect(pin).toHaveAttribute('aria-pressed', 'true')
+  await pin.click()
+  await expect(pin).toHaveAttribute('aria-pressed', 'false')
+  await expect.poll(async () => (await canvas.boundingBox())!.x).toBeLessThan(docked.x)
+  const library = page.getByRole('region', { name: 'Components' })
+  // A floating panel overlays the editor instead of pushing it aside.
+  expect((await library.boundingBox())!.x).toBeGreaterThan((await canvas.boundingBox())!.x)
+
+  await page.reload()
+  await expect(page.getByRole('button', { name: 'Pin Library' })).toHaveAttribute('aria-pressed', 'false')
+  await expect.poll(async () => (await canvas.boundingBox())!.x).toBeLessThan(docked.x)
+  await page.getByRole('button', { name: 'Pin Library' }).click()
+  await expect.poll(async () => (await canvas.boundingBox())!.x).toBe(docked.x)
+})
+
+test('closes panels and reopens them from the launcher, with Escape closing only a focused floating panel', async ({ page }) => {
+  const panels = page.getByRole('navigation', { name: 'Panels' })
+  await page.getByRole('button', { name: 'Close Library' }).click()
+  await expect(page.getByRole('searchbox', { name: 'Find components' })).toHaveCount(0)
+  const launcher = panels.getByRole('button', { name: 'Library', exact: true })
+  await expect(launcher).toBeFocused()
+  await expect(launcher).toHaveAttribute('aria-pressed', 'false')
+  await launcher.click()
+  await expect(page.getByRole('searchbox', { name: 'Find components' })).toBeVisible()
+
+  const results = page.getByRole('region', { name: 'Simulation results' })
+  await page.getByRole('button', { name: 'Wire (W)' }).click()
+  await page.keyboard.press('Escape')
+  await expect(page.getByRole('button', { name: 'Select and move' })).toHaveAttribute('aria-pressed', 'true')
+  await expect(results).toBeVisible()
+  await results.getByRole('button', { name: 'Pin Results' }).focus()
+  await page.keyboard.press('Escape')
+  await expect(results).toHaveCount(0)
+  await expect(panels.getByRole('button', { name: 'Results', exact: true })).toBeFocused()
+
+  await page.reload()
+  await expect(page.getByRole('region', { name: 'Simulation results' })).toHaveCount(0)
+  await expect(page.getByRole('searchbox', { name: 'Find components' })).toBeVisible()
 })
 
 test('edits a component rating and locates the resulting alert', async ({ page }) => {
