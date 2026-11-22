@@ -1,8 +1,9 @@
-import type { Branch, ElementKind } from '../engine/solver'
+import type { DynamicBranch } from '../engine/transient'
+import type { Branch } from '../engine/solver'
 
 export const GRID = 20
 export type Point = { x: number; y: number }
-export type Kind = ElementKind | 'ground'
+export type Kind = DynamicBranch['kind'] | 'ground'
 export type Component = Point & {
   id: string
   kind: Kind
@@ -11,6 +12,8 @@ export type Component = Point & {
   value: number
   closed?: boolean
   position?: number
+  maxCurrent?: number
+  maxPower?: number
 }
 export type Endpoint = { component: string; pin: 0 | 1 } | { junction: string }
 export type Wire = { id: string; from: Endpoint; to: Endpoint; points?: Point[] }
@@ -107,12 +110,17 @@ export function compile(circuit: Circuit): { branches: Branch[]; nodeByPin: Reco
     branches: circuit.components.flatMap(({ id, kind, value, closed, position }): Branch[] => {
       if (kind === 'ground') return []
       return [{
-        id, kind, value, a: nodeByPin[pinKey(id, 0)], b: nodeByPin[pinKey(id, 1)],
+        id, kind: kind === 'capacitor' ? 'voltmeter' : kind, value, a: nodeByPin[pinKey(id, 0)], b: nodeByPin[pinKey(id, 1)],
         ...(closed === undefined ? {} : { closed }),
         ...(position === undefined ? {} : { position }),
       }]
     }),
   }
+}
+
+export function transientBranches(circuit: Circuit, branches: Branch[]): DynamicBranch[] {
+  const capacitors = new Set(circuit.components.filter(c => c.kind === 'capacitor').map(c => c.id))
+  return branches.map(branch => capacitors.has(branch.id) ? { ...branch, kind: 'capacitor' as const } : branch)
 }
 
 type FlowEdge = { id: string; from: string; to: string; ground?: true }
@@ -217,7 +225,7 @@ export function groundFlows(circuit: Circuit, currentByBranch: Record<string, nu
 
 const kinds = new Set<string>([
   'resistor', 'voltage', 'current', 'switch', 'fuse', 'bulb', 'diode', 'led',
-  'voltmeter', 'ammeter', 'potentiometer', 'ground',
+  'voltmeter', 'ammeter', 'potentiometer', 'capacitor', 'ground',
 ])
 
 function object(value: unknown, name: string): Record<string, unknown> {
@@ -275,6 +283,7 @@ export function validateCircuit(value: unknown): Circuit {
     if (kind !== 'voltage' && kind !== 'current' && result.value < 0) {
       throw new Error(`Component ${id} value must not be negative.`)
     }
+    if (kind === 'capacitor' && result.value <= 0) throw new Error(`Capacitance must be positive and finite at ${id}.`)
     if (component.closed !== undefined) {
       if (typeof component.closed !== 'boolean') throw new Error(`Component ${id} closed must be a boolean.`)
       result.closed = component.closed
@@ -283,6 +292,12 @@ export function validateCircuit(value: unknown): Circuit {
       const position = finite(component.position, `Component ${id} position`)
       if (position < 0 || position > 1) throw new Error(`Component ${id} position must be between 0 and 1.`)
       result.position = position
+    }
+    for (const [key, label] of [['maxCurrent', 'current limit'], ['maxPower', 'power limit']] as const) {
+      if (component[key] === undefined) continue
+      const limit = finite(component[key], `Component ${id} ${label}`)
+      if (limit < 0) throw new Error(`Component ${id} ${label} must not be negative.`)
+      result[key] = limit
     }
     return result
   })

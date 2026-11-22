@@ -1,14 +1,55 @@
 // @vitest-environment happy-dom
 
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import App from './App'
 import { examples } from './circuit/examples'
 
-beforeEach(() => localStorage.clear())
+beforeEach(() => { localStorage.clear(); document.documentElement.lang = 'en' })
 afterEach(cleanup)
 
 describe('circuit workbench', () => {
+  it('loads the saved Spanish interface without changing circuit measurements', () => {
+    localStorage.setItem('meshlab:language', 'es')
+    render(<App />)
+    expect(document.documentElement.lang).toBe('es')
+    expect(screen.getByRole('heading', { name: 'Circuito' })).toBeTruthy()
+    const branches = within(screen.getByRole('table', { name: 'Mediciones por componente' }))
+    expect(branches.getAllByText('4 mA')).toHaveLength(2)
+    fireEvent.click(screen.getByRole('button', { name: 'Resistencia' }))
+    expect(screen.getByRole('alert').textContent).toMatch(/flotante/i)
+  })
+
+  it('simulates RC charging, freezes the trace when paused, and resets the scope', () => {
+    vi.useFakeTimers()
+    try {
+      localStorage.setItem('meshlab:circuit:v1', JSON.stringify(examples['RC Charging']))
+      render(<App />)
+      const trace = screen.getByRole('img', { name: 'Voltage versus time' })
+      act(() => vi.advanceTimersByTime(1000))
+      expect(trace.querySelector('polyline')?.getAttribute('points')?.split(' ').length).toBeGreaterThan(20)
+      fireEvent.click(screen.getByRole('button', { name: 'Pause' }))
+      const time = screen.getByLabelText('Simulation time').textContent
+      act(() => vi.advanceTimersByTime(1000))
+      expect(screen.getByLabelText('Simulation time').textContent).toBe(time)
+      fireEvent.click(screen.getByRole('button', { name: 'Reset transient' }))
+      expect(screen.getByLabelText('Simulation time').textContent).toBe('0 s')
+      expect(screen.getByText('Awaiting a transient sample')).toBeTruthy()
+      expect(screen.queryByRole('table', { name: 'Component readings' })).toBeNull()
+      expect(screen.queryByRole('img', { name: 'Voltage versus time' })?.querySelector('polyline')).toBeNull()
+    } finally { vi.useRealTimers() }
+  })
+
+  it('filters the component library by name and restores all options when cleared', () => {
+    render(<App />)
+    const search = screen.getByRole('searchbox', { name: 'Find components' })
+    fireEvent.change(search, { target: { value: 'resist' } })
+    expect(screen.getByRole('button', { name: 'Resistor' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'DC Voltage' })).toBeNull()
+    fireEvent.change(search, { target: { value: '' } })
+    expect(screen.getByRole('button', { name: 'DC Voltage' })).toBeTruthy()
+  })
+
   it('renders a live divider and freezes the displayed calculation when paused', () => {
     render(<App />)
     const branches = within(screen.getByRole('table', { name: 'Component readings' }))

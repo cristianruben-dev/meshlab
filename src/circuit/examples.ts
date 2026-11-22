@@ -99,4 +99,17 @@ export const examples: Record<string, Circuit> = {
     [node('return'), pin('V1', 1), at(160, 400)],
     [node('return'), pin('GND')],
   ]),
+
+  'RC Charging': circuit([
+    part('V1', 'voltage', 5, 180, 280, 90),
+    part('R1', 'resistor', 1_000, 360, 180),
+    part('C1', 'capacitor', .001, 580, 280, 90),
+    part('GND', 'ground', 0, 380, 460, 90),
+  ], [{ id: 'return', x: 380, y: 400 }], [
+    [pin('V1'), pin('R1'), at(180, 180)],
+    [pin('R1', 1), pin('C1'), at(580, 180)],
+    [pin('C1', 1), node('return'), at(580, 400)],
+    [node('return'), pin('V1', 1), at(180, 400)],
+    [node('return'), pin('GND')],
+  ]),
 }

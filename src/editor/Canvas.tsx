@@ -1,14 +1,17 @@
 import type { PointerEvent as ReactPointerEvent, RefObject } from 'react'
 import { endpointPosition, route, terminal, type Circuit, type Component, type Endpoint, type Point, type Wire } from '../circuit/model'
 import { metric, catalog } from './catalog'
+import type { Translate } from '../locale'
 import { Symbol } from './Symbol'
 
 type Measurement = { voltage: number; current: number; power: number }
 export type View = { x: number; y: number; scale: number }
 export type CanvasProps = {
+  t: Translate
   svg: RefObject<SVGSVGElement | null>
   circuit: Circuit
   selected: string[]
+  flagged: string[]
   view: View
   nodes: Record<string, number>
   pins: Record<string, string>
@@ -27,6 +30,7 @@ export type CanvasProps = {
   onBackground: (event: ReactPointerEvent) => void
   onComponent: (event: ReactPointerEvent, component: Component) => void
   onEndpoint: (event: ReactPointerEvent, endpoint: Endpoint) => void
+  onRoute: (event: ReactPointerEvent, wire: Wire, index: number) => void
   onWire: (event: ReactPointerEvent, wire: Wire) => void
   box: { start: Point; end: Point } | null
   onMove: (event: ReactPointerEvent) => void
@@ -37,7 +41,7 @@ const pathFor = (points: Point[]) => points.map((p, index) => `${index ? 'L' : '
 const endpointKey = (endpoint: Endpoint) => 'component' in endpoint ? `${endpoint.component}:${endpoint.pin}` : endpoint.junction
 
 export default function Canvas(props: CanvasProps) {
-  const { svg, circuit, view, wireFrom, cursor, readings, pins, nodes, showVoltage, showNodes } = props
+  const { t, svg, circuit, view, wireFrom, cursor, readings, pins, nodes, showVoltage, showNodes } = props
   const draft = wireFrom && cursor ? (() => {
     const start = endpointPosition(circuit, wireFrom)
     return pathFor([start, { x: cursor.x, y: start.y }, cursor])
@@ -46,7 +50,7 @@ export default function Canvas(props: CanvasProps) {
   const volts = (endpoint: Endpoint) => nodes[pins[endpointKey(endpoint)]]
   const voltageColor = (value: number | undefined) => value === undefined ? undefined : value === 0 ? '#4c8890' : value > 0 ? '#5bd9ad' : '#c890ff'
   return <svg ref={svg} className={`schematic mode-${props.mode}`} viewBox="0 0 800 540" xmlns="http://www.w3.org/2000/svg"
-    aria-label="Interactive circuit schematic" role="group" onPointerMove={props.onMove} onPointerUp={props.onUp} onPointerCancel={props.onUp}
+    aria-label={t('Interactive circuit schematic')} role="group" onPointerMove={props.onMove} onPointerUp={props.onUp} onPointerCancel={props.onUp}
     onPointerDown={props.onBackground}>
     <defs>
       <pattern id="minor-grid" width="20" height="20" patternUnits="userSpaceOnUse"><circle cx="1" cy="1" r="1" fill="#29364b" /></pattern>
@@ -65,13 +69,24 @@ export default function Canvas(props: CanvasProps) {
         const delay = (amps ?? 0) * (props.reverse ? -1 : 1) < 0 ? 'reverse' : 'normal'
         const rate = (22 + Math.min(175, Math.log10(1 + Math.abs(amps ?? 0) * 1000) * 34)) * props.speed
         return <g key={wire.id} className="wire">
-          <title>{`Node: ${metric(voltage, 'V')} · I: ${metric(amps, 'A')} · ΔV: 0 V · P: 0 W`}</title>
+          <title>{`${t('Node')}: ${metric(voltage, 'V')} · I: ${metric(amps, 'A')} · ΔV: 0 V · P: 0 W`}</title>
           <path d={path} fill="none" stroke={selected ? '#f6be61' : '#0a1019'} strokeWidth={selected ? 7 : 6} />
           <path d={path} fill="none" stroke={(showVoltage && voltageColor(voltage)) || '#56838f'} strokeWidth="2" strokeLinejoin="round" />
           {!!amps && Math.abs(amps) > 1e-12 && <path d={path} fill="none" stroke="#ffd363" strokeWidth="3.2" strokeLinecap="round"
             strokeDasharray="1 25" className="flow" style={{ animationDuration: `${26 / rate}s`, animationDirection: delay, animationPlayState: props.running ? 'running' : 'paused' }} />}
           <path data-export="hide" d={path} fill="none" stroke="transparent" strokeWidth="14" onPointerDown={event => props.onWire(event, wire)} />
         </g>
+      })}
+      {props.mode === 'select' && props.selected.length === 1 && circuit.wires.filter(w => w.id === props.selected[0]).flatMap(wire => {
+        if ([wire.from, wire.to].some(e => 'component' in e && hidden.has(e.component))) return []
+        const points = route(circuit, wire)
+        return points.slice(0, -1).map((a, index) => {
+          const b = points[index + 1]
+          if (Math.hypot(a.x - b.x, a.y - b.y) < 15) return null
+          return <circle key={`${wire.id}:${index}`} data-export="hide" className="route-handle" aria-label={t('Move wire segment')}
+            cx={(a.x + b.x) / 2} cy={(a.y + b.y) / 2} r="7" fill="#151e29" stroke="#ffc170" strokeWidth="2"
+            style={{ cursor: a.x === b.x ? 'ew-resize' : 'ns-resize' }} onPointerDown={event => props.onRoute(event, wire, index)} />
+        })
       })}
       {circuit.junctions.map(junction => <g key={junction.id} transform={`translate(${junction.x} ${junction.y})`}>
         <circle r="4" fill="#70d8c2" />
@@ -80,14 +95,16 @@ export default function Canvas(props: CanvasProps) {
       {circuit.components.filter(c => !hidden.has(c.id)).map(component => {
         const r = readings[component.id]
         const selected = props.selected.includes(component.id)
+        const flagged = props.flagged.includes(component.id)
         const lit = component.kind === 'led' ? Number((r?.current ?? 0) > .00005) : Math.min(1, Math.sqrt(Math.max(0, r?.power ?? 0)))
         const isVertical = component.rotation % 180 !== 0
         const value = component.kind === 'ground' ? metric(props.grounds[component.id], 'A')
-          : component.kind === 'switch' ? (component.closed ? 'CLOSED' : 'OPEN') : metric(component.value, catalog[component.kind].unit)
-        return <g key={component.id} transform={`translate(${component.x} ${component.y})`} color={selected ? '#73efd2' : '#cad5e7'} className="part"
+          : component.kind === 'switch' ? t(component.closed ? 'CLOSED' : 'OPEN') : metric(component.value, catalog[component.kind].unit)
+        return <g key={component.id} transform={`translate(${component.x} ${component.y})`} color={flagged ? '#ffc170' : selected ? '#73efd2' : '#cad5e7'} className="part"
           onPointerDown={event => props.onComponent(event, component)}>
           <title>{`${component.label} · V(a): ${metric(volts({ component: component.id, pin: 0 }), 'V')} · ΔV: ${metric(r?.voltage, 'V')} · I: ${metric(r?.current, 'A')} · P: ${metric(r?.power, 'W')}`}</title>
           <g transform={`rotate(${component.rotation})`}>
+            {flagged && <rect data-export="hide" x="-36" y="-25" width="72" height="50" rx="8" fill="#ffc17022" stroke="#ffc170" strokeDasharray="4 3" pointerEvents="none" />}
             <rect data-export="hide" x="-34" y="-23" width="68" height="46" rx="7" fill={selected ? '#11312e' : 'transparent'} stroke={selected ? '#3dc0a5' : 'none'} strokeDasharray="3 3" />
             <Symbol kind={component.kind} closed={component.closed} lit={lit} />
           </g>

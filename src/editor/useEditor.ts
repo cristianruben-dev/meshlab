@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { PointerEvent as ReactPointerEvent } from 'react'
 import { GRID, endpointPosition, route, type Circuit, type Component, type Endpoint, type Kind, type Point, type Wire } from '../circuit/model'
+import { copyBlock, pasteBlock, offsetWireSegment } from '../circuit/editing'
 import { loadCircuit, saveCircuit } from './io'
 import { catalog } from './catalog'
 import type { View } from './Canvas'
@@ -11,10 +12,12 @@ const initialView: View = { x: 0, y: 0, scale: 1 }
 type Gesture =
   | { kind: 'pan'; start: Point; view: View }
   | { kind: 'move'; start: Point; circuit: Circuit; selection: string[]; component: Component }
+  | { kind: 'route'; start: Point; wire: Wire; index: number; circuit: Circuit }
   | { kind: 'box'; start: Point; additive: boolean }
 
 export function useEditor(fallback: Circuit) {
   const [circuit, setCircuit] = useState(() => loadCircuit(fallback))
+  const [clipboard, setClipboard] = useState<Circuit | null>(null)
   const [selected, setSelected] = useState<string[]>([])
   const [mode, setMode] = useState<'select' | 'wire' | 'pan'>('select')
   const [wireFrom, setWireFrom] = useState<Endpoint | null>(null)
@@ -84,6 +87,16 @@ export function useEditor(fallback: Circuit) {
   function replace(next: Circuit) {
     commit(next); setSelected([]); setView(initialView); setTool('select')
   }
+  function reveal(ids: string[]) {
+    const parts = circuit.components.filter(c => ids.includes(c.id))
+    if (!parts.length) return
+    const x = (Math.min(...parts.map(c => c.x)) + Math.max(...parts.map(c => c.x))) / 2
+    const y = (Math.min(...parts.map(c => c.y)) + Math.max(...parts.map(c => c.y))) / 2
+    setSelected(ids)
+    svg.current?.scrollIntoView?.({ block: 'nearest' })
+    setTool('select')
+    setView(previous => ({ ...previous, x: 400 - x * previous.scale, y: 270 - y * previous.scale }))
+  }
   function fit() {
     if (!circuit.components.length) { setView(initialView); return }
     const positions = [...circuit.components, ...circuit.wires.flatMap(wire => route(circuit, wire))]
@@ -109,6 +122,29 @@ export function useEditor(fallback: Circuit) {
     if (preview) setPropertyPreview(next)
     else if (next) commit(next)
     else setPropertyPreview(null)
+  }
+  function copy() {
+    const block = copyBlock(circuit, selected)
+    if (block.components.length) setClipboard(block)
+  }
+  function paste(block = clipboard) {
+    if (!block?.components.length) return
+    const next = pasteBlock(circuit, block, id)
+    commit(next.circuit)
+    setSelected(next.selected)
+    setTool('select')
+  }
+  function duplicate() { paste(copyBlock(circuit, selected)) }
+  function routeDown(event: ReactPointerEvent, wire: Wire, index: number) {
+    if (mode !== 'select' || event.button !== 0) return
+    event.stopPropagation()
+    gesture.current = { kind: 'route', start: world(svgPoint(event)), wire, index, circuit }
+    svg.current?.setPointerCapture(event.pointerId)
+  }
+  function movedRoute(g: Extract<Gesture, { kind: 'route' }>, point: Point) {
+    const wire = offsetWireSegment(g.circuit, g.wire, g.index, { x: snap(point.x - g.start.x), y: snap(point.y - g.start.y) })
+    if (wire === g.wire) return null
+    return { ...g.circuit, wires: g.circuit.wires.map(w => w.id === wire.id ? wire : w) }
   }
   function rotate() {
     if (!circuit.components.some(c => selected.includes(c.id))) return
@@ -206,12 +242,17 @@ export function useEditor(fallback: Circuit) {
     if (wireFrom) setCursor({ x: snap(point.x), y: snap(point.y) })
     const g = gesture.current
     if (g?.kind === 'pan') setView({ ...g.view, x: g.view.x + pos.x - g.start.x, y: g.view.y + pos.y - g.start.y })
+    if (g?.kind === 'route') setGestureView(movedRoute(g, point))
     if (g?.kind === 'move') setGestureView(movedCircuit(g, point))
     if (g?.kind === 'box') setBox({ start: g.start, end: point })
   }
   function up(event: ReactPointerEvent) {
     const g = gesture.current
     const point = world(svgPoint(event))
+    if (event.type !== 'pointercancel' && g?.kind === 'route') {
+      const next = movedRoute(g, point)
+      if (next) commit(next)
+    }
     if (event.type !== 'pointercancel' && g?.kind === 'move') {
       const next = movedCircuit(g, point)
       if (next) commit(next)
@@ -225,7 +266,8 @@ export function useEditor(fallback: Circuit) {
     gesture.current = null; setGestureView(null); setBox(null)
   }
   return { circuit, simulated: propertyPreview ?? circuit, drawn: gestureView ?? wireDraft ?? propertyPreview ?? circuit, selected, view, svg, wireFrom, cursor, mode, box, storageError,
-    canUndo: !!past.length, canRedo: !!future.length, history, replace, fit, zoom, add, update, rotate, remove, setTool,
+    canCopy: circuit.components.some(c => selected.includes(c.id)), canPaste: !!clipboard, copy, paste, duplicate, routeDown,
+    canUndo: !!past.length, canRedo: !!future.length, history, replace, reveal, fit, zoom, add, update, rotate, remove, setTool,
     select: setSelected, endpointDown, wireDown, backgroundDown, componentDown, move, up, svgPoint, world }
 }
 function toggleId(list: string[], key: string) {

@@ -5,6 +5,7 @@ export const catalog: Record<Kind, { name: string; prefix: string; value: number
   current: { name: 'DC Current', prefix: 'I', value: .01, unit: 'A', group: 'Sources' },
   ground: { name: 'Ground', prefix: 'GND', value: 0, unit: '', group: 'Sources' },
   resistor: { name: 'Resistor', prefix: 'R', value: 1000, unit: 'Ω', group: 'Passive & control' },
+  capacitor: { name: 'Capacitor', prefix: 'C', value: .001, unit: 'F', group: 'Passive & control' },
   potentiometer: { name: 'Potentiometer', prefix: 'RV', value: 10000, unit: 'Ω', group: 'Passive & control' },
   switch: { name: 'SPST Switch', prefix: 'SW', value: 0, unit: '', group: 'Passive & control' },
   fuse: { name: 'Fuse', prefix: 'F', value: .1, unit: 'A', group: 'Passive & control' },

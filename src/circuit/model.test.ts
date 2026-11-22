@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest'
+import { stepTransient } from '../engine/transient'
 import { solve } from '../engine/solver'
 import { examples } from './examples'
 import {
-  compile, groundFlows, route, terminal, validateCircuit, wireFlows,
+  compile, transientBranches, groundFlows, route, terminal, validateCircuit, wireFlows,
   type Circuit, type Component, type Endpoint, type Wire,
 } from './model'
 
@@ -101,7 +102,7 @@ describe('circuit topology', () => {
   })
 
   it('round trips four named example circuits and solves their expected operating points', () => {
-    expect(Object.keys(examples)).toEqual(['Voltage Divider', 'Wheatstone Bridge', 'Two Sources', 'LED + Switch'])
+    expect(Object.keys(examples)).toEqual(['Voltage Divider', 'Wheatstone Bridge', 'Two Sources', 'LED + Switch', 'RC Charging'])
     for (const example of Object.values(examples)) {
       expect(validateCircuit(JSON.parse(JSON.stringify(example)))).toEqual(example)
       const { branches, nodeByPin } = compile(example)
@@ -120,4 +121,21 @@ describe('circuit topology', () => {
     expect(twoSources.branches.R3.voltage).toBeCloseTo(6)
     expect(led.branches.D1.current).toBeCloseTo(3 / 331, 7)
   })
+})
+
+it('charges and discharges the RC example through the public compiler', () => {
+  const circuit = examples['RC Charging']
+  const branches = transientBranches(circuit, compile(circuit).branches)
+  let previous: Record<string, number> = {}
+  for (let i = 0; i < 50; i++) {
+    const result = stepTransient(branches, .02, previous)
+    if (!result.ok) throw new Error(result.error)
+    previous = { C1: result.branches.C1.voltage }
+  }
+  expect(previous.C1).toBeCloseTo(5 * (1 - (1 / 1.02) ** 50), 9)
+  const off = branches.map(b => b.kind === 'voltage' ? { ...b, value: 0 } : b)
+  const discharge = stepTransient(off, .02, previous)
+  if (!discharge.ok) throw new Error(discharge.error)
+  expect(discharge.branches.C1.voltage).toBeCloseTo(previous.C1 / 1.02, 9)
+  expect(discharge.branches.C1.current).toBeLessThan(0)
 })
