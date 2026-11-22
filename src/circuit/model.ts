@@ -337,5 +337,13 @@ export function validateCircuit(value: unknown): Circuit {
     if (wire.points !== undefined) result.points = Array.from(list(wire.points, 'Waypoints'), (p) => point(p, 'Waypoint'))
     return result
   })
-  return { version: 1, components, wires, junctions }
+  const extras: Record<string, unknown> = {}
+  for (const [key, entry] of Object.entries(input)) {
+    if (
+      key === 'version' || key === 'components' || key === 'wires' || key === 'junctions' ||
+      key === '__proto__' || key === 'constructor' || key === 'prototype' || entry === undefined
+    ) continue
+    extras[key] = structuredClone(entry)
+  }
+  return { ...extras, version: 1, components, wires, junctions }
 }
