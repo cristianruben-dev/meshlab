@@ -7,13 +7,9 @@ import type { Translate } from '../locale'
 import type { Theme } from '../theme'
 import { COLUMNS, ROWS, boardGuides, holeGroup, populated, probeNode, validateStep, verifyBoard,
   type Assembly, type BoardStep, type Guide, type PlacementIssue } from './model'
+import { hole, layout } from './geometry'
+import { BoardDefs, BoardSurface, Mounted, boardPalettes } from './art'
 import './board.css'
-
-const columns = Array.from({ length: COLUMNS }, (_, i) => i + 1)
-const rowY = [89, 111, 151, 170, 189, 208, 227, 264, 283, 302, 321, 340, 371, 393]
-const layout = ROWS.flatMap((row, r) => columns.map(col => ({ id: `${row}${col}`, row: r, col, x: 104 + (col - 1) * 29, y: rowY[r] })))
-const hole = (id: string) => layout.find(p => p.id === id)!
-const rowLabels = ['T+', 'T−', 'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'B+', 'B−']
 const feedback: Record<PlacementIssue, string> = {
   incomplete: 'Select all sockets for this step.',
   occupied: 'A socket is already occupied. Choose a free socket in that strip.',
@@ -45,8 +41,9 @@ export default function Board(props: Props) {
     </section>
 }
 
-function GuidedBoard({ guide, circuit, t, pins, readings, currents, selected, onSelect, onToggle, onLoad }: Props & { guide: Guide }) {
+function GuidedBoard({ guide, circuit, theme, t, pins, readings, currents, selected, onSelect, onToggle, onLoad }: Props & { guide: Guide }) {
   const [mode, setMode] = useState<'preview' | 'build'>('preview')
+  const c = boardPalettes[theme]
   const [assembly, setAssembly] = useState<Assembly>({})
   const [choice, setChoice] = useState<string[]>([])
   const [issue, setIssue] = useState<PlacementIssue>()
@@ -146,44 +143,29 @@ function GuidedBoard({ guide, circuit, t, pins, readings, currents, selected, on
     </div>
     <div className="board-stage">
       <svg viewBox="0 0 760 435" role="group" aria-label={t('Interactive breadboard')} className="board-svg">
-        <defs>
-          <linearGradient id="board-body" x1="0" x2="0" y1="0" y2="1"><stop stopColor="#fbfcf8" /><stop offset="1" stopColor="#d1d8d9" /></linearGradient>
-          <linearGradient id="board-trench"><stop stopColor="#96a2a8" /><stop offset=".5" stopColor="#bcc6c8" /><stop offset="1" stopColor="#96a2a8" /></linearGradient>
-          <linearGradient id="board-resistor" x2="0" y2="1"><stop stopColor="#f3d2a5" /><stop offset="1" stopColor="#ad7543" /></linearGradient>
-          <radialGradient id="board-led"><stop stopColor="#fff7a2" /><stop offset=".56" stopColor="#f9a632" /><stop offset="1" stopColor="#db5d2b" /></radialGradient>
-        </defs>
-        <rect x="28" y="51" width="704" height="374" rx="20" fill="#030912" opacity=".65" />
-        <rect x="25" y="44" width="710" height="373" rx="20" fill="url(#board-body)" stroke="#fff" strokeOpacity=".35" />
-        <rect x="38" y="132" width="685" height="224" rx="12" fill="#f8faf7" fillOpacity=".65" stroke="#b2bec1" />
-        <rect x="42" y="239" width="677" height="15" rx="4" fill="url(#board-trench)" />
-        {[[80, 362], [120, 402]].map(([a, b], index) => <g key={a} stroke={index ? '#4b79be' : '#c04845'} strokeWidth="2" strokeOpacity=".75">
-          <path d={`M85,${a}H674M85,${b}H674`} />
-        </g>)}
-        <g className="board-index" fill="#415058">
-          {rowLabels.map((row, index) => <text key={row} x="66" y={rowY[index] + 4} textAnchor="middle">{row}</text>)}
-          {columns.map(col => <text key={col} x={hole(`A${col}`).x} y="143" textAnchor="middle">{col}</text>)}
-        </g>
+        <BoardDefs c={c} />
+        <BoardSurface c={c} />
         <g pointerEvents="none">
-          {layout.map(p => <circle key={p.id} cx={p.x} cy={p.y} r="3.9" fill="#34404a" stroke="#aab5b8" strokeWidth="1.2" />)}
-          {selectedStrip && layout.filter(p => holeGroup(p.id) === selectedStrip).map(p =>
-            <circle key={p.id} cx={p.x} cy={p.y} r={p.id === probe ? 8 : 6} fill="#28a982" fillOpacity={p.id === probe ? '.82' : '.4'} stroke="#087d61" />)}
+          {selectedStrip && layout.filter(p => holeGroup(p.id) === selectedStrip).map(p => p.id === probe
+            ? <g key={p.id}><circle cx={p.x} cy={p.y} r="11" fill={c.strip} fillOpacity=".18" className="board-probe-pulse" /><circle cx={p.x} cy={p.y} r="6.5" fill={c.strip} stroke="#fff" strokeWidth="2" /></g>
+            : <rect key={p.id} x={p.x - 5.5} y={p.y - 5.5} width="11" height="11" rx="3" fill={c.strip} fillOpacity=".5" stroke={c.stripEdge} strokeWidth="1.2" />)}
         </g>
         {guide.steps.map(step => {
           const sockets = visible[step.id]
           const part = step.part ? parts.get(step.part) : undefined
           return sockets ? <Mounted key={step.id} step={step} sockets={sockets} part={part} label={t(step.label)}
             lit={!!part && (currents?.[part.id] ?? 0) > .00005}
-            selected={!!step.part && selected.includes(step.part)} choose={() => part && onSelect([part.id])} /> : null
+            selected={!!step.part && selected.includes(step.part)} choose={() => part && onSelect([part.id])} c={c} /> : null
         })}
         {choice.map((id, i) => {
           const p = hole(id)
-          return <g key={id} pointerEvents="none"><circle cx={p.x} cy={p.y} r="8" fill="#155eb5" /><text className="board-index" x={p.x} y={p.y + 4} textAnchor="middle" fill="white">{i + 1}</text></g>
+          return <g key={id} pointerEvents="none"><circle cx={p.x} cy={p.y} r="8.5" fill={c.target} stroke="#fff" strokeWidth="1.5" /><text className="board-index" x={p.x} y={p.y + 3.5} textAnchor="middle" fill="white">{i + 1}</text></g>
         })}
         {step?.sockets.map((id, i) => {
           const p = hole(id)
           return <g key={id} pointerEvents="none">
-            <circle cx={p.x} cy={p.y} r={i === targetIndex ? 12 : 8} stroke={i === targetIndex ? '#016ae8' : '#5885a2'} strokeWidth="2.5" fill="none" strokeDasharray="3 2" />
-            {requested === i && <circle cx={p.x} cy={p.y} r="15" stroke="#016ae8" strokeWidth="1.5" fill="none" />}
+            <circle cx={p.x} cy={p.y} r={i === targetIndex ? 12 : 8.5} stroke={c.target} strokeOpacity={i === targetIndex ? 1 : .55} strokeWidth="2.4" fill={c.target} fillOpacity=".08" strokeDasharray="3.5 2.5" className={i === targetIndex ? 'board-target' : undefined} />
+            {requested === i && <circle cx={p.x} cy={p.y} r="16" stroke={c.target} strokeWidth="1.5" fill="none" />}
           </g>
         })}
         {layout.map(p => <g key={p.id} id={`board-socket-${p.id}`} role="button" tabIndex={p.id === focusHole ? 0 : -1}
@@ -238,53 +220,4 @@ function GuidedBoard({ guide, circuit, t, pins, readings, currents, selected, on
         <Button size="sm" variant="ghost" key={item.example} onClick={() => onLoad(item.example)}>{t(item.example)}<ArrowRight /></Button>)}</div>
     </div>
   </div>
-}
-
-function Mounted({ step, sockets, part, label, selected, lit, choose }: {
-  step: BoardStep; sockets: string[]; part?: Component; label: string; selected: boolean; lit: boolean; choose: () => void
-}) {
-  const a = hole(sockets[0]), b = sockets[1] ? hole(sockets[1]) : a
-  const isSource = part?.kind === 'voltage'
-  const isGround = part?.kind === 'ground'
-  if (isSource || isGround) return <g className="board-mounted" data-selected={selected} onClick={choose}>
-    <title>{part.label} · {label}</title>
-    {(isSource ? [a, b] : [a]).map((p, i) => {
-      const above = p.y < 200
-      const y = p.y + (above ? -26 : 18)
-      const color = isSource && !i ? '#bc3840' : '#245996'
-      return <g key={p.id} stroke={color}>
-        <path d={`M${p.x},${p.y}V${y}`} strokeWidth={selected ? 5 : 3} />
-        <rect x={p.x - 19} y={y - 8} width="38" height="15" rx="5" fill={selected ? '#fff8dd' : '#edf3f1'} />
-        <text className="board-index" x={p.x} y={y + 3} fill={color} stroke="none" textAnchor="middle">{isGround ? 'GND' : `${part.label.slice(0, 4)}${i ? '−' : '+'}`}</text>
-      </g>
-    })}
-  </g>
-  if (!part) {
-    const bend = Math.max(18, Math.abs(b.y - a.y) * .65)
-    const path = `M${a.x},${a.y} C${a.x + bend},${a.y} ${b.x + bend},${b.y} ${b.x},${b.y}`
-    return <g pointerEvents="none"><title>{label}</title><path d={path} fill="none" stroke="#1d2a32" strokeOpacity=".36" strokeWidth="7" /><path d={path} fill="none" stroke={step.color} strokeWidth="4.5" /></g>
-  }
-  const x = (a.x + b.x) / 2, y = (a.y + b.y) / 2
-  const degrees = Math.atan2(b.y - a.y, b.x - a.x) * 180 / Math.PI
-  const length = Math.hypot(a.x - b.x, a.y - b.y)
-  return <g className="board-mounted" data-selected={selected} onClick={choose}>
-    <title>{part.label} · {label}</title>
-    <g transform={`translate(${x} ${y}) rotate(${degrees})`}>
-      <path d={`M${-length / 2},0H${length / 2}`} stroke="#eaf5ff" strokeWidth="5" />
-      <path d={`M${-length / 2},0H${length / 2}`} stroke="#56606b" strokeWidth="2.4" />
-      {part.kind === 'led' ? <g>
-        {lit && <circle r="23" fill="#ffd05c" opacity=".45" />}
-        <circle r="13" stroke={selected ? '#1264ce' : '#a22e26'} strokeWidth={selected ? 3 : 1.5} fill={lit ? 'url(#board-led)' : '#b95150'} />
-        <path d="M-9 8H9" stroke="#813023" strokeWidth="2" />
-      </g> : part.kind === 'switch' ? <g>
-        <rect x="-26" y="-12" width="52" height="24" rx="5" fill="#3a4856" stroke={selected ? '#1264ce' : '#24303d'} strokeWidth="2" />
-        <rect x={part.closed ? 2 : -17} y="-6" width="15" height="12" rx="3" fill="#d7e6ea" />
-      </g> : <g>
-        <rect x="-32" y="-9" width="64" height="18" rx="8" fill="url(#board-resistor)" stroke={selected ? '#1264ce' : '#92613f'} strokeWidth={selected ? 3 : 1.5} />
-        <text className="board-index" y="3" textAnchor="middle" fill="#352319">{metric(part.value, 'Ω')}</text>
-      </g>}
-    </g>
-    <rect x={x - 18} y={y - 29} width="36" height="15" rx="4" fill={selected ? '#1264ce' : '#283945'} />
-    <text className="board-index" x={x} y={y - 18} textAnchor="middle" fill="#fff">{part.label.length > 5 ? `${part.label.slice(0, 4)}…` : part.label}</text>
-  </g>
 }
