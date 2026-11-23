@@ -30,8 +30,8 @@ const layout = (entries: Partial<PanelLayout>): PanelLayout => ({ library: close
 // bottom sheets so the editor keeps its width; everything else opens from the launcher.
 export const defaultLayouts: Stored = {
   desktop: {
-    schematic: layout({ library: open(true), inspector: open(true), results: open(false), scope: open(false) }),
-    board: layout({ library: open(true), inspector: open(true) }),
+    schematic: layout({ library: open(false), inspector: open(false), results: open(false), scope: open(false) }),
+    board: layout({ library: open(false), inspector: open(false) }),
   },
   tablet: {
     schematic: layout({ results: open(false), scope: open(false) }),

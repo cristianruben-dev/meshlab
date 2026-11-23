@@ -33,14 +33,12 @@ import {
   Table2,
   Trash2,
   Undo2,
-  Upload,
   Waypoints,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
 import { Slider } from '@/components/ui/slider'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Badge } from '@/components/ui/badge'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
@@ -51,7 +49,6 @@ import { boardShape } from '../breadboard/model'
 import { defaultBoardSettings, type BoardSize } from '../breadboard/settings'
 import { JUMPER_COLORS } from '../breadboard/types'
 import { useBreadboard } from '../breadboard/useBreadboard'
-import { examples } from '../circuit/examples'
 import { solve, type DiagnosticTarget } from '../engine/solver'
 import Canvas from '../editor/Canvas'
 import { useTransient } from '../editor/useTransient'
@@ -61,19 +58,17 @@ import { catalog, metric, parseMetric } from '../editor/catalog'
 import { Symbol } from '../editor/Symbol'
 import { diagnostic, type Language, type Translate } from '../locale'
 import { exportJson, exportPng } from '../editor/io'
-import { parseImportJson } from '../storage/io'
-import { blankCircuit, type Folder, type PreferredView, type Project } from '../storage/types'
+import { blankCircuit, type Project } from '../storage/types'
 import type { Theme, ThemePreference } from '../theme'
 import { palettes } from '../palette'
 import { ResistorColorModal, ResistorMiniPreview } from '../tools/ResistorColorTool'
-import { LanguageSelect, ThemeSwitch } from './ChromeControls'
+import { ThemeSwitch } from './ChromeControls'
 import { IconTool, Launcher, Panel } from './Panel'
 import { panelSides, usePanels, type PanelId } from './panels'
-import { ProjectTabs, type SaveState } from './ProjectTabs'
+import { ProjectHeader, type SaveState } from './ProjectHeader'
 import { useInsets, type InsetSources } from './useInsets'
 
 const Board = lazy(() => import('../breadboard/Board'))
-const exampleNames = Object.keys(examples)
 const kinds = Object.keys(catalog) as Kind[]
 const groups = [...new Set(kinds.map(kind => catalog[kind].group))]
 const one = (n: number | readonly number[]) => typeof n === 'number' ? n : n[0]
@@ -101,52 +96,32 @@ const panelMeta: { id: PanelId; label: string; title: string; icon: ReactNode }[
 
 export type WorkbenchProps = {
   project: Project
-  projects: Project[]
-  folders: Folder[]
-  openProjectIds: string[]
   saveState: SaveState
   storageMode: 'indexeddb' | 'memory'
   language: Language
   preference: ThemePreference
   theme: Theme
   t: Translate
-  onLanguageChange: (language: Language) => void
   onThemeChange: (preference: ThemePreference) => void
   onCircuitChange: (projectId: string, circuit: Circuit) => void
   onBackToHub: () => void
-  onSelectTab: (projectId: string) => void
-  onCloseTab: (projectId: string) => void
-  onOpenProject: (projectId: string) => void
-  onQuickCreateBlank: (view?: PreferredView) => void
-  onOpenNewProjectModal: () => void
   onRenameProject: (projectId: string, name: string) => Promise<void>
   onEditProjectDetails: (project: Project) => void
-  onImportBundleFile?: (file: File) => Promise<void>
 }
 
 export function Workbench({
   project,
-  projects,
-  folders,
-  openProjectIds,
   saveState,
   storageMode,
   language,
   preference,
   theme,
   t,
-  onLanguageChange,
   onThemeChange,
   onCircuitChange,
   onBackToHub,
-  onSelectTab,
-  onCloseTab,
-  onOpenProject,
-  onQuickCreateBlank,
-  onOpenNewProjectModal,
   onRenameProject,
   onEditProjectDetails,
-  onImportBundleFile,
 }: WorkbenchProps) {
   const palette = palettes[theme]
   const viewMode = project.preferredView
@@ -171,10 +146,9 @@ export function Workbench({
   const [showNodes, setShowNodes] = useState(true)
   const [showVoltage, setShowVoltage] = useState(false)
   const [message, setMessage] = useState('')
-  const [importError, setImportError] = useState(false)
-  const file = useRef<HTMLInputElement>(null)
+  const [ioError, setIoError] = useState(false)
   const stage = useRef<HTMLElement>(null)
-  // Circuits fit the free editor area when they open: on first load and after loading an example or a file.
+  // Circuits fit the free editor area when they open: on first load and after clearing the circuit.
   const [fitRequest, setFitRequest] = useState(0)
 
   const shape = useMemo(
@@ -262,8 +236,8 @@ export function Workbench({
   // The editors frame their content in the area left free by the floating chrome. Phone sheets are transient, so only
   // the status line and the launcher count there.
   const insetSources: InsetSources = panels.compact
-    ? { top: ['.project-tabs-bar', '.topbar', '.hud-top > .toolbar'], bottom: ['.statusbar', '.launcher-host'], left: [], right: [] }
-    : { top: ['.project-tabs-bar', '.topbar', '.hud-top > .toolbar'], bottom: ['.statusbar', '.float-bottom'], left: ['.launcher-host', '.float-left'], right: ['.float-right'] }
+    ? { top: ['.project-header', '.topbar', '.hud-top > .toolbar'], bottom: ['.statusbar', '.launcher-host'], left: [], right: [] }
+    : { top: ['.project-header', '.topbar', '.hud-top > .toolbar'], bottom: ['.statusbar', '.float-bottom'], left: ['.launcher-host', '.float-left'], right: ['.float-right'] }
   const insets = useInsets(stage, insetSources, `${viewMode}:${panels.tier}:${shown.map(panel => `${panel.id}${docked(panel.id) ? '+' : ''}`)}`)
 
   function toggleRun() {
@@ -309,63 +283,18 @@ export function Workbench({
     editor.replace(next); setRunning(true); setHeld(null); transient.reset(); setProbe('')
     breadboard.cancelPending()
   }
-  function chooseExample(name: string | null) {
-    if (!name || !examples[name]) return
-    const base = structuredClone(examples[name])
-    if (schematic) {
-      openCircuit(base)
-    } else {
-      openCircuit({
-        ...base,
-        wires: [],
-        junctions: [],
-        breadboard: autoPlaceCircuit(base, shape),
-      })
-    }
-    setMessage('')
-    setMenuOpen(false)
-  }
   function newCircuit() {
     openCircuit(schematic ? blankCircuit() : { ...blankCircuit(), breadboard: { placements: [], jumpers: [] } })
     setMessage('')
     setMenuOpen(false)
   }
-  function importFile() { setMenuOpen(false); file.current?.click() }
   function exportAs(kind: 'JSON' | 'PNG') {
     setMenuOpen(false)
     return kind === 'JSON' ? handleIo(() => exportJson(editor.circuit), 'JSON exported.') : handleIo(exportImage, 'PNG exported.')
   }
   async function handleIo(action: () => void | Promise<void>, success: string) {
-    try { await action(); setImportError(false); setMessage(success) }
-    catch (error) { setImportError(true); setMessage(error instanceof Error ? error.message : 'The operation failed.') }
-  }
-  async function handleFileChosen(chosen: File) {
-    try {
-      const parsed = parseImportJson(await chosen.text(), { fileName: chosen.name, byteLength: chosen.size })
-      if (parsed.kind === 'legacy-circuit') {
-        const next = !schematic && !parsed.circuit.breadboard && parsed.circuit.wires.length > 0
-          ? { ...parsed.circuit, wires: [], junctions: [], breadboard: autoPlaceCircuit(parsed.circuit, shape) }
-          : parsed.circuit
-        openCircuit(next)
-        setImportError(false)
-        setMessage('Circuit imported.')
-      } else if (parsed.kind === 'meshlab-project') {
-        const raw = parsed.file.project.circuit
-        const next = !schematic && !raw.breadboard && raw.wires.length > 0
-          ? { ...raw, wires: [], junctions: [], breadboard: autoPlaceCircuit(raw, shape) }
-          : raw
-        openCircuit(next)
-        setImportError(false)
-        setMessage('Project imported.')
-      } else if (onImportBundleFile) {
-        await onImportBundleFile(chosen)
-        setImportError(false)
-        setMessage('Backup imported.')
-      }
-    } catch (error) {
-      setImportError(true)
-      setMessage(error instanceof Error ? error.message : 'The operation failed.')
-    }
+    try { await action(); setIoError(false); setMessage(success) }
+    catch (error) { setIoError(true); setMessage(error instanceof Error ? error.message : 'The operation failed.') }
   }
   function exportImage() {
     const svg = editor.svg.current
@@ -445,7 +374,7 @@ export function Workbench({
       <div className="result-summary"><Reading label={t('Nodes')} value={String(Object.keys(valid?.nodes ?? {}).length)} /><Reading label={t('Power delivered')} value={valid ? metric(delivered, 'W') : '—'} />
         <Reading label={t('Power absorbed')} value={valid ? metric(delivered + valid.balance, 'W') : '—'} /><Reading label={t('Residual')} value={valid ? metric(valid.balance, 'W') : '—'} /></div>
       {!valid || !hasCircuit ? <div className="empty-state result-empty"><strong>{t('Reading unavailable')}</strong>
-        <small>{t(!hasCircuit ? 'Add components or load an example.' : pendingSample ? 'Awaiting a transient sample' : 'No solution')}</small></div> : <div className="tables">
+        <small>{t(!hasCircuit ? 'Add components from the library.' : pendingSample ? 'Awaiting a transient sample' : 'No solution')}</small></div> : <div className="tables">
         <div className="table-wrap"><table><caption className="section-label">{t('Component readings')}</caption><thead><tr><th>{t('Branch')}</th><th>ΔV</th><th>{t('Current')}</th><th>{t('Power')}</th></tr></thead>
           <tbody>{Object.entries(valid?.branches ?? {}).map(([id, r]) => <tr key={id}><th scope="row">{active.circuit.components.find(c => c.id === id)?.label ?? id}</th><td>{metric(r.voltage, 'V')}</td><td>{metric(r.current, 'A')}</td><td>{metric(r.power, 'W')}</td></tr>)}</tbody></table></div>
         <div className="table-wrap"><table><caption className="section-label">{t('Node potentials')}</caption><thead><tr><th>{t('Node')}</th><th>{t('Voltage')}</th></tr></thead><tbody>{Object.entries(valid?.nodes ?? {}).map(([node, volts]) => <tr key={node}><th scope="row">{node === '0' ? 'GND' : node}</th><td>{metric(volts, 'V')}</td></tr>)}</tbody></table></div>
@@ -459,20 +388,14 @@ export function Workbench({
     className={`panel-${id}`}>{content[id]}</Panel>
   const notice = fault || valid?.warnings.length || alerts.length || message || editor.storageError
 
-  const examplesSelect = <Select items={Object.fromEntries(exampleNames.map(n => [n, t(n)]))} value={null} onValueChange={chooseExample}>
-    <SelectTrigger className="examples-trigger" aria-label={t('Circuit examples')}><SelectValue placeholder={t('Load an example')} /></SelectTrigger>
-    <SelectContent>{exampleNames.map(name => <SelectItem value={name} key={name}>{t(name)}</SelectItem>)}</SelectContent>
-  </Select>
   const fileButtons = (size: 'sm' | 'default') => <>
     <Button variant="ghost" size={size} onClick={newCircuit}><Plus /><Label>{t('New')}</Label></Button>
-    <Button variant="ghost" size={size} onClick={importFile}><Upload /><Label>{t('Import')}</Label></Button>
     <div className="export-group" role="group" aria-label={t('Export')}>
       <Button variant="ghost" size={size} onClick={() => exportAs('JSON')}><ArrowDownToLine /> JSON</Button>
       {schematic && <Button variant="ghost" size={size} onClick={() => exportAs('PNG')}><ArrowDownToLine /> PNG</Button>}
     </div>
   </>
   const themeSwitch = <ThemeSwitch value={preference} onChange={onThemeChange} t={t} />
-  const languageSelect = <LanguageSelect value={language} onChange={value => { onLanguageChange(value); setQuery('') }} t={t} />
   const tool = (label: string, icon: ReactNode, onClick: () => void, options: { pressed?: boolean; disabled?: boolean } = {}) =>
     <IconTool side="bottom" label={t(label)} pressed={options.pressed} disabled={options.disabled} onClick={onClick}>{icon}</IconTool>
   const clipboardTools = <>
@@ -491,21 +414,13 @@ export function Workbench({
     : `${t('Breadboard')} · ${t(sizeNames[boardSettings.size])}`
 
   return <TooltipProvider>
-    <div className="workbench" data-tabs="true" data-view={viewMode} data-tier={panels.tier} data-compact={panels.compact}
+    <div className="workbench" data-project-header data-view={viewMode} data-tier={panels.tier} data-compact={panels.compact}
       data-dock-left={dock.left} data-dock-right={dock.right} data-dock-bottom={dock.bottom} data-sheet-open={panels.compact && shown.length > 0}>
-      <ProjectTabs
+      <ProjectHeader
         activeProject={project}
-        projects={projects}
-        folders={folders}
-        openProjectIds={openProjectIds}
         saveState={saveState}
         t={t}
         onBackToHub={onBackToHub}
-        onSelectTab={onSelectTab}
-        onCloseTab={onCloseTab}
-        onOpenProject={onOpenProject}
-        onQuickCreateBlank={onQuickCreateBlank}
-        onOpenNewProjectModal={onOpenNewProjectModal}
         onRenameActive={name => onRenameProject(project.id, name)}
         onEditActiveDetails={() => onEditProjectDetails(project)}
       />
@@ -518,14 +433,12 @@ export function Workbench({
         </span>
         <Badge variant="outline" className={`state ${fault ? 'state-fault' : running && hasCircuit ? 'state-live' : 'state-idle'}`}><i />{fault ? t('CHECK CIRCUIT') : !hasCircuit ? t('EMPTY') : running ? t(transient.enabled ? 'TRANSIENT LIVE' : 'LIVE DC') : t('PAUSED')}</Badge>
         {wide && <div className="file-actions">
-          {examplesSelect}
           {fileButtons('sm')}
           <Button variant="ghost" size="sm" onClick={() => openColorTool(inspected?.kind === 'resistor' ? inspected : undefined)}>
             <Palette /><Label>{t('Color code')}</Label>
           </Button>
           <span className="topbar-divider" aria-hidden="true" />
           {themeSwitch}
-          {languageSelect}
         </div>}
         <Button className="run-button" data-running={running} onClick={toggleRun}>{running ? <Pause /> : <Play />}<Label>{running ? t('Pause') : t('Run simulation')}</Label></Button>
         {!wide && <Popover open={menuOpen} onOpenChange={setMenuOpen}>
@@ -533,7 +446,6 @@ export function Workbench({
           <PopoverContent className="more-menu" aria-label={t('More actions')}>
             <section className="more-section">
               <h3 className="section-label">{t('Circuit file')}</h3>
-              {examplesSelect}
               <div className="more-grid">{fileButtons('default')}</div>
             </section>
             <section className="more-section">
@@ -545,14 +457,9 @@ export function Workbench({
             <section className="more-section">
               <h3 className="section-label">{t('Appearance')}</h3>
               <div className="more-row"><span>{t('Theme')}</span>{themeSwitch}</div>
-              <div className="more-row"><span>{t('Language')}</span>{languageSelect}</div>
             </section>
           </PopoverContent>
         </Popover>}
-        <input type="file" accept=".json,application/json" hidden ref={file} onChange={event => {
-          const chosen = event.target.files?.[0]; event.target.value = ''
-          if (chosen) void handleFileChosen(chosen)
-        }} />
       </header>
 
       {placed('left', true).length > 0 && <aside className="dock dock-left">{placed('left', true).map(renderPanel)}</aside>}
@@ -568,7 +475,7 @@ export function Workbench({
               onComponent={editor.componentDown} onEndpoint={editor.endpointDown} onWire={editor.wireDown} onRoute={editor.routeDown}
               onMove={editor.move} onUp={editor.up} box={editor.box} inset={insets} />
             {!hasCircuit && <div className="canvas-empty" style={{ paddingTop: insets.top, paddingBottom: insets.bottom, paddingLeft: insets.left, paddingRight: insets.right }}>
-              <span className="canvas-empty-icon"><CircuitBoard /></span><strong>{t('Start a new circuit')}</strong><span>{t('Add components or load an example.')}</span></div>}
+              <span className="canvas-empty-icon"><CircuitBoard /></span><strong>{t('Start a new circuit')}</strong><span>{t('Add components from the library.')}</span></div>}
           </div>
         ) : (
           <div className="editor">
@@ -673,7 +580,7 @@ export function Workbench({
               </div>
             </div>
           )}
-          {notice ? <div role={fault || importError ? 'alert' : 'status'} className={fault || importError || valid?.warnings.length || alerts.length ? 'notice warning' : 'notice'}>
+          {notice ? <div role={fault || ioError ? 'alert' : 'status'} className={fault || ioError || valid?.warnings.length || alerts.length ? 'notice warning' : 'notice'}>
             {fault && <div className="diagnostic-row"><span>{diagnostic(language, fault)}</span>{faultIds.length > 0 && <Button size="xs" variant="outline" onClick={() => schematic ? editor.reveal(faultIds) : editor.select(faultIds)}>{t('Locate')}</Button>}</div>}
             {alerts.map(alert => {
               const unit = alert.quantity === 'current' ? 'A' : 'W'
@@ -685,7 +592,7 @@ export function Workbench({
             })}{warnings.map(({ message, ids }) => <div key={message} className="diagnostic-row">
               <span>{diagnostic(language, message)}</span>
               {ids.length > 0 && <Button size="xs" variant="outline" onClick={() => schematic ? editor.reveal(ids) : editor.select(ids)}>{t('Locate')}</Button>}
-            </div>)}{message && <div>{importError ? diagnostic(language, message, true) : t(message)}</div>}
+            </div>)}{message && <div>{ioError ? diagnostic(language, message, true) : t(message)}</div>}
             {editor.storageError && <div>{t('Autosave is unavailable in this browser.')}</div>}
           </div> : null}
         </div>

@@ -41,8 +41,8 @@ beforeEach(async () => {
 
 afterEach(cleanup)
 
-describe('local projects hub & multi-project workspace', () => {
-  it('starts on the Projects Hub without forcing an example circuit and allows creating and switching two open projects', async () => {
+describe('local projects hub & single-project workspace', () => {
+  it('starts on the Projects Hub without forcing an example circuit and switches projects only from the Hub', async () => {
     render(<App />)
     await screen.findByRole('heading', { name: 'Projects' })
     expect(screen.getByRole('heading', { name: 'No projects yet' })).toBeTruthy()
@@ -56,7 +56,7 @@ describe('local projects hub & multi-project workspace', () => {
     fireEvent.click(within(dialog).getByRole('button', { name: 'Create project' }))
 
     await screen.findByText('Start a new circuit')
-    expect(screen.getByRole('tab', { name: 'Blank Project' }).getAttribute('aria-selected')).toBe('true')
+    expect(screen.getByRole('heading', { name: 'Blank Project' })).toBeTruthy()
 
     // Return to Hub and open Voltage Divider template as a second project
     fireEvent.click(screen.getByRole('button', { name: 'Projects' }))
@@ -65,16 +65,21 @@ describe('local projects hub & multi-project workspace', () => {
     fireEvent.click(screen.getByRole('button', { name: /Voltage Divider/ }))
 
     await screen.findByRole('table', { name: 'Component readings' })
-    expect(screen.getByRole('tab', { name: 'Voltage Divider' }).getAttribute('aria-selected')).toBe('true')
-    expect(screen.getByRole('tab', { name: 'Blank Project' }).getAttribute('aria-selected')).toBe('false')
+    expect(screen.getByRole('heading', { name: 'Voltage Divider' })).toBeTruthy()
+    expect(screen.queryByRole('tablist')).toBeNull()
+    expect(screen.queryByRole('heading', { name: 'Blank Project' })).toBeNull()
 
-    // Switch back to Blank Project tab — state must remain isolated
-    fireEvent.click(screen.getByRole('tab', { name: 'Blank Project' }))
+    // Reopen Blank Project from the Hub — state must remain isolated
+    fireEvent.click(screen.getByRole('button', { name: 'Projects' }))
+    await screen.findByRole('heading', { name: 'Projects' })
+    fireEvent.click(screen.getByRole('button', { name: 'Blank Project' }))
     await screen.findByText('Start a new circuit')
     expect(screen.queryByRole('table', { name: 'Component readings' })).toBeNull()
 
-    // Switch back to Voltage Divider tab — readings are intact
-    fireEvent.click(screen.getByRole('tab', { name: 'Voltage Divider' }))
+    // Reopen Voltage Divider from the Hub — readings are intact
+    fireEvent.click(screen.getByRole('button', { name: 'Projects' }))
+    await screen.findByRole('heading', { name: 'Projects' })
+    fireEvent.click(screen.getByRole('button', { name: 'Voltage Divider' }))
     const branches = within(await screen.findByRole('table', { name: 'Component readings' }))
     expect(branches.getAllByText('4 mA')).toHaveLength(2)
   })
@@ -206,18 +211,17 @@ describe('circuit workbench', () => {
     const { container, unmount } = await openTemplateFromHub('Voltage Divider')
     const workbench = () => container.querySelector<HTMLElement>('.workbench')!
     const pin = screen.getByRole('button', { name: 'Pin Library' })
-    expect(pin.getAttribute('aria-pressed')).toBe('true')
-    expect(workbench().dataset.dockLeft).toBe('true')
-    fireEvent.click(pin)
-    expect(screen.getByRole('button', { name: 'Pin Library' }).getAttribute('aria-pressed')).toBe('false')
+    expect(pin.getAttribute('aria-pressed')).toBe('false')
     expect(workbench().dataset.dockLeft).toBe('false')
-    expect(JSON.parse(localStorage.getItem('meshlab:panels')!).desktop.schematic.library).toEqual({ open: true, pinned: false })
+    fireEvent.click(pin)
+    expect(screen.getByRole('button', { name: 'Pin Library' }).getAttribute('aria-pressed')).toBe('true')
+    expect(workbench().dataset.dockLeft).toBe('true')
+    expect(JSON.parse(localStorage.getItem('meshlab:panels')!).desktop.schematic.library).toEqual({ open: true, pinned: true })
     unmount()
     render(<App />)
-    await screen.findByRole('button', { name: 'Pin Library' })
-    expect(screen.getByRole('button', { name: 'Pin Library' }).getAttribute('aria-pressed')).toBe('false')
+    fireEvent.click(await screen.findByRole('button', { name: 'Pin Library' }))
     expect(document.querySelector<HTMLElement>('.workbench')!.dataset.dockLeft).toBe('false')
-    expect(screen.getByRole('button', { name: 'Pin Inspector' }).getAttribute('aria-pressed')).toBe('true')
+    expect(screen.getByRole('button', { name: 'Pin Inspector' }).getAttribute('aria-pressed')).toBe('false')
   })
 
   it('closes a panel and reopens it from the launcher', async () => {
@@ -267,7 +271,7 @@ describe('circuit workbench', () => {
     const saved = JSON.parse(localStorage.getItem('meshlab:panels')!)
     expect(saved.tablet.schematic.inspector).toEqual({ open: true, pinned: true })
     expect(saved.tablet.schematic.library).toEqual({ open: true, pinned: false })
-    expect(saved.desktop.schematic.library).toEqual({ open: true, pinned: true })
+    expect(saved.desktop.schematic.library).toEqual({ open: true, pinned: false })
     unmount()
     render(<App />)
     await screen.findByRole('button', { name: 'Pin Inspector' })
@@ -280,24 +284,25 @@ describe('circuit workbench', () => {
     const { unmount } = await openTemplateFromHub('Voltage Divider')
     expect(screen.queryByRole('region', { name: 'Components' })).toBeNull()
     expect(screen.getByRole('button', { name: 'Library' }).getAttribute('aria-pressed')).toBe('false')
-    expect(screen.getByRole('button', { name: 'Pin Inspector' }).getAttribute('aria-pressed')).toBe('true')
+    expect(screen.getByRole('button', { name: 'Pin Inspector' }).getAttribute('aria-pressed')).toBe('false')
     unmount()
     localStorage.setItem('meshlab:panels', '{not json')
     render(<App />)
     await screen.findByRole('button', { name: 'Pin Library' })
-    expect(screen.getByRole('button', { name: 'Pin Library' }).getAttribute('aria-pressed')).toBe('true')
+    expect(screen.getByRole('button', { name: 'Pin Library' }).getAttribute('aria-pressed')).toBe('false')
   })
 
-  it('opens the More actions menu on narrow screens with file, theme, and language controls, and closes it with Escape', async () => {
+  it('opens the More actions menu on narrow screens with file and theme controls, and closes it with Escape', async () => {
     viewport(390)
     await openTemplateFromHub('Voltage Divider')
     expect(screen.queryByRole('combobox', { name: 'Circuit examples' })).toBeNull()
     const more = screen.getByRole('button', { name: 'More actions' })
     await act(async () => { fireEvent.click(more) })
     const menu = await screen.findByRole('dialog', { name: 'More actions' })
-    for (const name of ['New', 'Import', 'JSON', 'PNG']) expect(within(menu).getByRole('button', { name })).toBeTruthy()
-    expect(within(menu).getByRole('combobox', { name: 'Circuit examples' })).toBeTruthy()
-    expect(within(menu).getByRole('combobox', { name: 'Language' })).toBeTruthy()
+    for (const name of ['New', 'JSON', 'PNG']) expect(within(menu).getByRole('button', { name })).toBeTruthy()
+    expect(within(menu).queryByRole('combobox', { name: 'Circuit examples' })).toBeNull()
+    expect(within(menu).queryByRole('combobox', { name: 'Language' })).toBeNull()
+    expect(within(menu).queryByRole('button', { name: 'Import' })).toBeNull()
     const themes = within(within(menu).getByRole('group', { name: 'Theme' }))
     fireEvent.click(themes.getByRole('button', { name: 'Dark theme' }))
     expect(document.documentElement.classList.contains('dark')).toBe(true)

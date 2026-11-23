@@ -1,7 +1,6 @@
 import { useMemo, useRef, useState } from 'react'
 import {
   AlertTriangle,
-  ArrowRight,
   ChevronDown,
   ChevronUp,
   CircuitBoard,
@@ -15,13 +14,10 @@ import {
   Inbox,
   Info,
   Layers,
-  LayoutGrid,
   LayoutTemplate,
-  List,
   Palette as PaletteIcon,
   Pencil,
   Plus,
-  Search,
   Star,
   Trash2,
   Upload,
@@ -30,7 +26,6 @@ import {
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { APP_VERSION, GITHUB_REPO_URL } from '../appMeta'
 import { examples } from '../circuit/examples'
@@ -43,7 +38,7 @@ import { ResistorColorModal } from '../tools/ResistorColorTool'
 import { AboutModal } from './AboutModal'
 import { CircuitPreview } from './CircuitPreview'
 import { ConfirmDialog } from './ConfirmDialog'
-import { filterAndSortProjects, isRecentProject, type NavSelection, type ProjectSort, type SmartView } from './filters'
+import { filterAndSortProjects, isRecentProject, type NavSelection, type SmartView } from './filters'
 import { dismissStarNudge, evaluateStarNudge, markGitHubStarred } from './githubStarNudge'
 import { ProjectCard } from './ProjectCard'
 import { ProjectModal, type ProjectModalSubmit, type StartingPoint } from './ProjectModal'
@@ -64,7 +59,6 @@ type ModalState =
 export type ProjectsHubProps = {
   projects: Project[]
   folders: Folder[]
-  openProjectIds: string[]
   storageMode: 'indexeddb' | 'memory'
   language: Language
   preference: ThemePreference
@@ -75,7 +69,6 @@ export type ProjectsHubProps = {
   onLanguageChange: (language: Language) => void
   onThemeChange: (preference: ThemePreference) => void
   onOpenProject: (project: Project) => void
-  onReturnToEditor: () => void
   onCreateProject: (data: ProjectModalSubmit) => Promise<void>
   onUpdateProject: (id: string, data: ProjectModalSubmit) => Promise<void>
   onRenameProject: (project: Project, name: string) => Promise<void>
@@ -114,7 +107,6 @@ function ColorSwatches({ value, onChange, t }: { value: string; onChange: (color
 export function ProjectsHub({
   projects,
   folders,
-  openProjectIds,
   storageMode,
   language,
   preference,
@@ -125,7 +117,6 @@ export function ProjectsHub({
   onLanguageChange,
   onThemeChange,
   onOpenProject,
-  onReturnToEditor,
   onCreateProject,
   onUpdateProject,
   onRenameProject,
@@ -142,9 +133,6 @@ export function ProjectsHub({
   onQuickTemplate,
 }: ProjectsHubProps) {
   const [selection, setSelection] = useState<NavSelection>({ kind: 'smart', view: 'all' })
-  const [query, setQuery] = useState('')
-  const [sort, setSort] = useState<ProjectSort>('updated')
-  const [layout, setLayout] = useState<'grid' | 'list'>('grid')
   const [templatesOpen, setTemplatesOpen] = useState(true)
   const [modal, setModal] = useState<ModalState>(null)
   const [confirm, setConfirm] = useState<ConfirmState>(null)
@@ -160,7 +148,6 @@ export function ProjectsHub({
   const fileInput = useRef<HTMLInputElement>(null)
 
   const folderById = useMemo(() => new Map(folders.map(folder => [folder.id, folder])), [folders])
-  const openSet = useMemo(() => new Set(openProjectIds), [openProjectIds])
 
   const activeSelection: NavSelection =
     selection.kind === 'folder' && !folderById.has(selection.folderId)
@@ -171,10 +158,10 @@ export function ProjectsHub({
     () =>
       filterAndSortProjects(projects, {
         selection: activeSelection,
-        query,
-        sort,
+        query: '',
+        sort: 'updated',
       }),
-    [projects, activeSelection, query, sort],
+    [projects, activeSelection],
   )
 
   const smartCounts: Record<SmartView, number> = useMemo(() => ({
@@ -205,11 +192,10 @@ export function ProjectsHub({
             : t('Unfiled')
       : t('Projects')
 
-  const hasActiveFilters = Boolean(query.trim()) || activeSelection.kind === 'folder' || (activeSelection.kind === 'smart' && activeSelection.view !== 'all')
+  const hasActiveFilters = activeSelection.kind === 'folder' || (activeSelection.kind === 'smart' && activeSelection.view !== 'all')
   const defaultNewFolderId = activeSelection.kind === 'folder' ? activeSelection.folderId : null
 
   function clearFilters() {
-    setQuery('')
     setSelection({ kind: 'smart', view: 'all' })
   }
 
@@ -276,42 +262,19 @@ export function ProjectsHub({
                 <small>{t('PROJECTS')}</small>
               </div>
             </div>
-            {openProjectIds.length > 0 && (
-              <Button variant="outline" size="sm" className="return-editor-btn" onClick={onReturnToEditor}>
-                <span>{t('Back to editor')}</span>
-                <span className="return-count">{openProjectIds.length}</span>
-                <ArrowRight size={13} />
-              </Button>
-            )}
-          </div>
-
-          <div className="hub-search">
-            <Search size={15} aria-hidden="true" />
-            <Input
-              type="search"
-              value={query}
-              aria-label={t('Search projects')}
-              placeholder={t('Search projects or descriptions…')}
-              onChange={event => setQuery(event.target.value)}
-            />
-            {query && (
-              <button type="button" className="hub-search-clear" aria-label={t('Clear filters')} onClick={() => setQuery('')}>
-                <X size={13} />
-              </button>
-            )}
           </div>
 
           <div className="hub-topbar-right">
             <Button size="sm" onClick={() => setModal({ mode: 'create', startingPoint: 'blank-schematic' })}>
               <Plus /> {t('New project')}
             </Button>
-            <Button variant="outline" size="sm" onClick={() => fileInput.current?.click()}>
+            <Button variant="outline" size="sm" aria-label={t('Import')} onClick={() => fileInput.current?.click()}>
               <Upload /> <span className="hub-btn-label">{t('Import')}</span>
             </Button>
-            <Button variant="ghost" size="sm" onClick={onExportBackup} disabled={projects.length === 0 && folders.length === 0}>
+            <Button variant="ghost" size="sm" aria-label={t('Export backup')} onClick={onExportBackup} disabled={projects.length === 0 && folders.length === 0}>
               <Download /> <span className="hub-btn-label">{t('Export backup')}</span>
             </Button>
-            <Button variant="ghost" size="sm" onClick={() => setResistorToolOpen(true)}>
+            <Button variant="ghost" size="sm" aria-label={t('Color code')} onClick={() => setResistorToolOpen(true)}>
               <PaletteIcon /> <span className="hub-btn-label">{t('Color code')}</span>
             </Button>
             <span className="topbar-divider hub-hide-sm" aria-hidden="true" />
@@ -369,35 +332,6 @@ export function ProjectsHub({
                     <Download size={13} /> {t('Export folder')}
                   </Button>
                 )}
-                <Select
-                  items={{
-                    updated: t('Last modified'),
-                    name: t('Name A–Z'),
-                    created: t('Date created'),
-                  }}
-                  value={sort}
-                  onValueChange={next => {
-                    if (next === 'updated' || next === 'name' || next === 'created') setSort(next)
-                  }}
-                >
-                  <SelectTrigger size="sm" className="sort-trigger" aria-label={t('Sort projects')}>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="updated">{t('Last modified')}</SelectItem>
-                    <SelectItem value="name">{t('Name A–Z')}</SelectItem>
-                    <SelectItem value="created">{t('Date created')}</SelectItem>
-                  </SelectContent>
-                </Select>
-
-                <div className="segmented layout-switch" role="group" aria-label={t('View layout')}>
-                  <Button variant="ghost" size="icon-sm" aria-label={t('Grid view')} aria-pressed={layout === 'grid'} onClick={() => setLayout('grid')}>
-                    <LayoutGrid size={14} />
-                  </Button>
-                  <Button variant="ghost" size="icon-sm" aria-label={t('List view')} aria-pressed={layout === 'list'} onClick={() => setLayout('list')}>
-                    <List size={14} />
-                  </Button>
-                </div>
               </div>
             </div>
 
@@ -569,7 +503,7 @@ export function ProjectsHub({
             ) : visibleProjects.length === 0 ? (
               <section className="hub-empty-filtered">
                 <h2>{t('No projects match your filters')}</h2>
-                <p>{t('Try adjusting your search query or selected folder.')}</p>
+                <p>{t('Try selecting another folder or filter.')}</p>
                 {hasActiveFilters && (
                   <Button variant="outline" size="sm" onClick={clearFilters}>
                     {t('Clear filters')}
@@ -577,14 +511,12 @@ export function ProjectsHub({
                 )}
               </section>
             ) : (
-              <section className={layout === 'grid' ? 'project-grid' : 'project-list'} aria-label={t('Projects')}>
+              <section className="project-grid" aria-label={t('Projects')}>
                 {visibleProjects.map(project => (
                   <ProjectCard
                     key={project.id}
                     project={project}
                     folder={project.folderId ? folderById.get(project.folderId) : undefined}
-                    layout={layout}
-                    isOpenInTab={openSet.has(project.id)}
                     palette={palette}
                     language={language}
                     t={t}

@@ -92,7 +92,7 @@ button:not(:disabled) { cursor: pointer; }
  */
 .workbench {
   --gutter: 12px; --gap: 8px; --radius-surface: 16px; --radius-control: 10px; --radius-chip: 8px;
-  --tabs-h: 0px; --bar-top: var(--gutter);
+  --project-header-h: 0px; --bar-top: var(--gutter);
   --bar-h: 52px; --tools-h: 40px; --launcher-w: 40px; --status-h: 32px;
   --side-left: 288px; --side-right: 312px;
   /* Distance of in-stage chrome from each stage edge: the gutter at the viewport, the gap beside a docked card. */
@@ -110,7 +110,7 @@ button:not(:disabled) { cursor: pointer; }
 }
 .workspace-mode-pill svg { color: var(--brand); flex: none; }
 
-.workbench[data-tabs="true"] { --tabs-h: 32px; --bar-top: calc(var(--gutter) + var(--tabs-h) + 6px); }
+.workbench[data-project-header] { --project-header-h: 32px; --bar-top: calc(var(--gutter) + var(--project-header-h) + 6px); }
 .workbench[data-view="board"] { background: var(--stage); --hud-space: calc(var(--bar-space) + var(--tools-h) + var(--gap)); }
 .workbench[data-view="schematic"] { --hud-space: calc(var(--bar-space) + var(--tools-h) + var(--gap)); --baseline: calc(var(--edge-bottom) + var(--status-h) + var(--gap)); }
 .workbench[data-dock-left="true"] { --edge-left: var(--gap); }
@@ -153,7 +153,6 @@ button:not(:disabled) { cursor: pointer; }
 .file-actions { flex: 0 1 auto !important; min-width: 0; margin-left: auto; display: flex; align-items: center; gap: 2px; }
 .file-actions > * { flex: none; }
 .file-actions [data-slot="button"] { height: 32px; padding-inline: 10px; border-radius: var(--radius-control); color: var(--label); font-size: 13px; }
-.examples-trigger { min-width: 176px; margin-right: 6px; border-radius: var(--radius-control) !important; }
 .export-group { display: inline-flex; gap: 2px; }
 .topbar-divider { width: 1px; height: 20px; margin: 0 8px; background: var(--border); }
 .locale-trigger { min-width: 112px; margin-left: 6px; border-radius: var(--radius-control) !important; }
@@ -167,7 +166,6 @@ button:not(:disabled) { cursor: pointer; }
 .more-section { display: grid; gap: 8px; padding: 10px; }
 .more-section + .more-section { border-top: 1px solid var(--hairline); }
 .more-section .section-label { margin: 0; }
-.more-section .examples-trigger { width: 100%; min-width: 0; margin: 0; }
 .more-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
 .more-grid .export-group { display: contents; }
 .more-grid [data-slot="button"] { justify-content: flex-start; height: 36px; padding-inline: 12px; border-radius: var(--radius-control); background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--hairline); color: var(--foreground); }
@@ -379,7 +377,6 @@ kbd { display: inline-block; min-width: 20px; text-align: center; color: var(--k
   .brand-text { display: none; }
   .locale-trigger { min-width: 0; }
   .locale-trigger [data-slot="select-value"] { display: none; }
-  .examples-trigger { min-width: 150px; }
 }
 /* The "More" menu keeps its labels. */
 .more-menu .action-label { position: static; width: auto; height: auto; overflow: visible; clip-path: none; }

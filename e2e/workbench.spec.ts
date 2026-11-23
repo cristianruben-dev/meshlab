@@ -29,25 +29,25 @@ async function downloadFile(page: Page, button: 'JSON' | 'PNG', filename: string
 
 test.beforeEach(async ({ page }) => {
   await page.goto('/')
-  await expect(page.getByRole('heading', { name: 'My Projects' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Projects', exact: true })).toBeVisible()
   await page.getByRole('button', { name: /Voltage Divider/ }).click()
   await expect(schematic(page)).toBeVisible()
 })
 
-test('loads a predefined example and persists both the circuit and the language', async ({ page }) => {
-  await page.getByRole('combobox', { name: 'Circuit examples' }).click()
-  await page.getByRole('option', { name: 'Wheatstone Bridge' }).click()
-  await expect(page.getByRole('rowheader', { name: 'R5', exact: true })).toBeVisible()
+test('keeps examples, imports, and language settings on the Hub', async ({ page }) => {
+  await expect(page.getByRole('combobox', { name: 'Circuit examples' })).toHaveCount(0)
+  await expect(page.locator('input[type="file"]')).toHaveCount(0)
+  await expect(page.getByRole('combobox', { name: 'Language' })).toHaveCount(0)
 
+  await page.getByRole('button', { name: 'Projects', exact: true }).click()
+  await expect(page.getByRole('button', { name: 'Import', exact: true })).toBeVisible()
   await page.getByRole('combobox', { name: 'Language' }).click()
   await page.getByRole('option', { name: 'Español' }).click()
-  await expect(page.getByRole('heading', { name: 'Circuito', exact: true })).toBeVisible()
-  await expect(page.getByRole('table', { name: 'Mediciones por componente' })).toBeVisible()
-
-  await page.reload()
-  await expect(page.locator('html')).toHaveAttribute('lang', 'es')
+  await page.getByRole('button', { name: /Puente de Wheatstone/i }).click()
   await expect(page.getByRole('table', { name: 'Mediciones por componente' })
     .getByRole('rowheader', { name: 'R5', exact: true })).toBeVisible()
+  await page.reload()
+  await expect(page.locator('html')).toHaveAttribute('lang', 'es')
 })
 
 test('drags and rotates a component, then undoes both changes', async ({ page }) => {
@@ -108,30 +108,6 @@ test('joins a terminal to a wire at a T-junction and downloads a full-size PNG',
   expect(size).toEqual({ width: 2400, height: 1620 })
 })
 
-test('imports a valid JSON file and preserves it after invalid JSON is rejected', async ({ page }) => {
-  const original = await downloadFile(page, 'JSON', 'meshlab-circuit.json')
-  const circuit: Circuit = JSON.parse(original.toString())
-  const resistor = circuit.components.find(part => part.id === 'R1')!
-  resistor.label = 'Imported resistor'
-
-  async function importFile(payload: object) {
-    const [chooser] = await Promise.all([
-      page.waitForEvent('filechooser'),
-      page.getByRole('button', { name: 'Import', exact: true }).click(),
-    ])
-    await chooser.setFiles({ name: 'circuit.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(payload)) })
-  }
-
-  await importFile(circuit)
-  await expect(page.getByRole('status')).toContainText('Circuit imported.')
-  const reading = page.getByRole('rowheader', { name: 'Imported resistor' })
-  await expect(reading).toBeVisible()
-  await importFile({ ...circuit, version: 99, components: [] })
-  await expect(page.getByRole('alert')).toContainText('Unsupported circuit version.')
-  await expect(reading).toBeVisible()
-  expect(JSON.parse((await downloadFile(page, 'JSON', 'meshlab-circuit.json')).toString())).toEqual(circuit)
-})
-
 test('fits the workbench in a narrow viewport without horizontal document overflow', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
   await expect(schematic(page)).toBeVisible()
@@ -156,29 +132,24 @@ test('fits the workbench in a narrow viewport without horizontal document overfl
 test('fills the viewport with the editor and keeps the page itself from scrolling', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 })
   const size = await schematic(page).boundingBox()
-  const dockLeft = await page.getByRole('region', { name: 'Components' }).boundingBox()
+  const library = await page.getByRole('region', { name: 'Components' }).boundingBox()
   expect(size!.height).toBe(900)
-  expect(size!.x).toBeGreaterThanOrEqual(dockLeft!.x + dockLeft!.width - 1)
+  expect(size!.x).toBeLessThan(library!.x)
   expect(await page.evaluate(() => document.documentElement.scrollHeight - document.documentElement.clientHeight)).toBe(0)
 })
 
 test('pins and unpins panels, docking the editor, and restores the layout after reload', async ({ page }) => {
   const canvas = schematic(page)
-  const docked = (await canvas.boundingBox())!
+  const floating = (await canvas.boundingBox())!
   const pin = page.getByRole('button', { name: 'Pin Library' })
+  await expect(pin).toHaveAttribute('aria-pressed', 'false')
+  await pin.click()
+  await expect(pin).toHaveAttribute('aria-pressed', 'true')
+  await expect.poll(async () => (await canvas.boundingBox())!.x).toBeGreaterThan(floating.x)
+  await page.reload()
   await expect(pin).toHaveAttribute('aria-pressed', 'true')
   await pin.click()
-  await expect(pin).toHaveAttribute('aria-pressed', 'false')
-  await expect.poll(async () => (await canvas.boundingBox())!.x).toBeLessThan(docked.x)
-  const library = page.getByRole('region', { name: 'Components' })
-  // A floating panel overlays the editor instead of pushing it aside.
-  expect((await library.boundingBox())!.x).toBeGreaterThan((await canvas.boundingBox())!.x)
-
-  await page.reload()
-  await expect(page.getByRole('button', { name: 'Pin Library' })).toHaveAttribute('aria-pressed', 'false')
-  await expect.poll(async () => (await canvas.boundingBox())!.x).toBeLessThan(docked.x)
-  await page.getByRole('button', { name: 'Pin Library' }).click()
-  await expect.poll(async () => (await canvas.boundingBox())!.x).toBe(docked.x)
+  await expect.poll(async () => (await canvas.boundingBox())!.x).toBe(floating.x)
 })
 
 test('closes panels and reopens them from the launcher, with Escape closing only a focused floating panel', async ({ page }) => {
@@ -245,8 +216,8 @@ test('reroutes a selected wire and copies, pastes, and duplicates selected parts
 })
 
 test('records an RC voltage trace and resets it while paused', async ({ page }) => {
-  await page.getByRole('combobox', { name: 'Circuit examples' }).click()
-  await page.getByRole('option', { name: 'RC Charging' }).click()
+  await page.getByRole('button', { name: 'Projects', exact: true }).click()
+  await page.getByRole('button', { name: /RC Charging/ }).click()
   await expect(page.getByText('TRANSIENT LIVE')).toBeVisible()
   const scope = page.getByRole('img', { name: 'Voltage versus time' })
   await expect(scope.locator('polyline')).toBeVisible()
@@ -274,7 +245,7 @@ test('follows the system color scheme until a theme is chosen, then keeps the ch
   await expect(page.getByRole('row', { name: /^R1\b/ })).toContainText('4 mA')
 })
 
-test('keeps phone chrome on one row and moves file, theme, and language controls into the More menu', async ({ page }) => {
+test('keeps phone chrome on one row and moves file and theme controls into the More menu', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
   const topbar = page.locator('.topbar')
   await expect.poll(async () => (await topbar.boundingBox())!.height).toBe(52)
@@ -285,16 +256,11 @@ test('keeps phone chrome on one row and moves file, theme, and language controls
   const more = page.getByRole('button', { name: 'More actions' })
   await more.click()
   const menu = page.getByRole('dialog', { name: 'More actions' })
-  await menu.getByRole('combobox', { name: 'Circuit examples' }).click()
-  await page.getByRole('option', { name: 'Wheatstone Bridge' }).click()
-  await expect(menu).toHaveCount(0)
-  await page.getByRole('navigation', { name: 'Panels' }).getByRole('button', { name: 'Results', exact: true }).click()
-  await expect(page.getByRole('rowheader', { name: 'R5', exact: true })).toBeVisible()
-
-  await more.click()
   await menu.getByRole('group', { name: 'Theme' }).getByRole('button', { name: 'Dark theme' }).click()
   await expect(page.locator('html')).toHaveClass(/dark/)
-  await expect(menu.getByRole('combobox', { name: 'Language' })).toBeVisible()
+  await expect(menu.getByRole('combobox')).toHaveCount(0)
+  await expect(menu.getByRole('button', { name: 'Import', exact: true })).toHaveCount(0)
+  await expect(menu.getByRole('button', { name: 'JSON', exact: true })).toBeVisible()
   await page.keyboard.press('Escape')
   await expect(menu).toHaveCount(0)
   await expect(more).toBeFocused()

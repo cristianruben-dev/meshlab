@@ -5,6 +5,14 @@ import { panelsKey, readPanels } from './panels'
 afterEach(() => localStorage.clear())
 
 describe('saved panel layouts', () => {
+  it('starts with no pinned panels in any viewport or editor', () => {
+    for (const tier of Object.values(readPanels())) {
+      for (const layout of Object.values(tier)) {
+        expect(Object.values(layout).some(panel => panel.pinned)).toBe(false)
+      }
+    }
+  })
+
   it('keeps at most one docked side panel on tablets even when the stored data has more', () => {
     const pinned = { open: true, pinned: true }
     localStorage.setItem(panelsKey, JSON.stringify({ tablet: { schematic: { library: pinned, inspector: pinned, results: pinned } } }))
@@ -18,7 +26,7 @@ describe('saved panel layouts', () => {
     for (const value of ['[1,2]', '42', '{"tablet":{"schematic":[1]},"desk":{}}']) {
       localStorage.setItem(panelsKey, value)
       expect(() => readPanels()).not.toThrow()
-      expect(readPanels().desktop.schematic.library).toEqual({ open: true, pinned: true })
+      expect(readPanels().desktop.schematic.library).toEqual({ open: true, pinned: false })
     }
   })
 })

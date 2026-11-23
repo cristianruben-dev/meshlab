@@ -8,27 +8,10 @@ import { ProjectsHub } from './projects/ProjectsHub'
 import { downloadProjectFile, downloadWorkspaceBundle, importAnyJson } from './storage/io'
 import { migrateLegacyCircuit } from './storage/migrate'
 import { openWorkspaceRepository, type WorkspaceRepository } from './storage/repository'
-import { blankCircuit, boardSettingsForSize, type Folder, type PreferredView, type Project, type Tag } from './storage/types'
+import { blankCircuit, type Folder, type Project, type Tag } from './storage/types'
 import { useTheme } from './theme'
-import type { SaveState } from './workspace/ProjectTabs'
+import type { SaveState } from './workspace/ProjectHeader'
 import { Workbench } from './workspace/Workbench'
-
-const OPEN_TABS_KEY = 'meshlab:workspace:tabs'
-
-function readOpenTabs(): string[] {
-  try {
-    const raw = JSON.parse(localStorage.getItem(OPEN_TABS_KEY) ?? '[]')
-    return Array.isArray(raw) ? raw.filter((item): item is string => typeof item === 'string') : []
-  } catch {
-    return []
-  }
-}
-
-function saveOpenTabs(ids: string[]) {
-  try {
-    localStorage.setItem(OPEN_TABS_KEY, JSON.stringify(ids))
-  } catch { /* Storage is optional. */ }
-}
 
 function readHashProjectId(): string | null {
   if (typeof window === 'undefined') return null
@@ -47,11 +30,6 @@ function writeHashProjectId(id: string | null) {
   }
 }
 
-type EditorModalState =
-  | { mode: 'create' }
-  | { mode: 'edit'; project: Project }
-  | null
-
 export default function App() {
   const [language, setLanguage] = useState<Language>(readLanguage)
   const { preference, setPreference, theme } = useTheme()
@@ -63,12 +41,11 @@ export default function App() {
   const [projects, setProjects] = useState<Project[]>([])
   const [folders, setFolders] = useState<Folder[]>([])
   const [tags, setTags] = useState<Tag[]>([])
-  const [openProjectIds, setOpenProjectIds] = useState<string[]>([])
   const [activeProjectId, setActiveProjectId] = useState<string | null>(null)
   const [screen, setScreen] = useState<'hub' | 'editor'>('hub')
   const [saveState, setSaveState] = useState<SaveState>('saved')
   const [hubNotice, setHubNotice] = useState<{ text: string; error?: boolean } | null>(null)
-  const [editorModal, setEditorModal] = useState<EditorModalState>(null)
+  const [editorModal, setEditorModal] = useState<Project | null>(null)
 
   const repoRef = useRef<WorkspaceRepository | null>(null)
   const saveChainRef = useRef<Promise<void>>(Promise.resolve())
@@ -111,18 +88,13 @@ export default function App() {
       if (cancelled) return
 
       const existingIds = new Set(snapshot.projects.map(project => project.id))
-      const restoredTabs = readOpenTabs().filter(id => existingIds.has(id))
       const hashProjectId = readHashProjectId()
 
       if (hashProjectId && existingIds.has(hashProjectId)) {
-        const tabs = restoredTabs.includes(hashProjectId) ? restoredTabs : [...restoredTabs, hashProjectId]
-        setOpenProjectIds(tabs)
         setActiveProjectId(hashProjectId)
         setScreen('editor')
       } else {
         if (hashProjectId) writeHashProjectId(null)
-        setOpenProjectIds(restoredTabs)
-        setActiveProjectId(restoredTabs[0] ?? null)
         setScreen('hub')
       }
       setReady(true)
@@ -135,11 +107,6 @@ export default function App() {
       repoRef.current = null
     }
   }, [refreshFromRepo])
-
-  useEffect(() => {
-    if (!ready) return
-    saveOpenTabs(openProjectIds)
-  }, [openProjectIds, ready])
 
   useEffect(() => {
     const activeProject = activeProjectId ? projects.find(p => p.id === activeProjectId) : undefined
@@ -160,7 +127,6 @@ export default function App() {
 
   const openProjectById = useCallback(async (projectId: string) => {
     await flushPendingSaves()
-    setOpenProjectIds(prev => prev.includes(projectId) ? prev : [...prev, projectId])
     setActiveProjectId(projectId)
     setScreen('editor')
     writeHashProjectId(projectId)
@@ -168,35 +134,10 @@ export default function App() {
 
   const backToHub = useCallback(async () => {
     await flushPendingSaves()
+    setActiveProjectId(null)
     setScreen('hub')
     writeHashProjectId(null)
   }, [flushPendingSaves])
-
-  const returnToEditor = useCallback(() => {
-    const targetId = (activeProjectId && projects.some(p => p.id === activeProjectId))
-      ? activeProjectId
-      : openProjectIds.find(id => projects.some(p => p.id === id)) ?? null
-    if (!targetId) return
-    setActiveProjectId(targetId)
-    setScreen('editor')
-    writeHashProjectId(targetId)
-  }, [activeProjectId, openProjectIds, projects])
-
-  const closeTab = useCallback(async (projectId: string) => {
-    await flushPendingSaves()
-    const remaining = openProjectIds.filter(id => id !== projectId)
-    setOpenProjectIds(remaining)
-    if (activeProjectId === projectId) {
-      const nextId = remaining.at(-1) ?? null
-      setActiveProjectId(nextId)
-      if (nextId) {
-        writeHashProjectId(nextId)
-      } else {
-        setScreen('hub')
-        writeHashProjectId(null)
-      }
-    }
-  }, [activeProjectId, flushPendingSaves, openProjectIds])
 
   const handleCircuitChange = useCallback((projectId: string, nextCircuit: Circuit) => {
     const now = Date.now()
@@ -235,24 +176,10 @@ export default function App() {
       circuit: data.circuit ?? blankCircuit(),
     })
     await refreshFromRepo(repo)
-    setOpenProjectIds(prev => [...prev, created.id])
     setActiveProjectId(created.id)
     setScreen('editor')
     writeHashProjectId(created.id)
   }, [flushPendingSaves, refreshFromRepo])
-
-  const handleQuickCreateBlank = useCallback(async (view: PreferredView = 'schematic') => {
-    await handleCreateProject({
-      name: t('Untitled Project'),
-      description: '',
-      folderId: null,
-      preferredView: view,
-      ...(view === 'board' ? { boardSettings: boardSettingsForSize('half') } : {}),
-      circuit: view === 'board'
-        ? { ...blankCircuit(), breadboard: { placements: [], jumpers: [] } }
-        : blankCircuit(),
-    })
-  }, [handleCreateProject, t])
 
   const handleQuickTemplate = useCallback(async (templateName: string, folderId: string | null) => {
     const circuit = examples[templateName]
@@ -307,7 +234,6 @@ export default function App() {
     await flushPendingSaves()
     await repo.deleteProject(project.id)
     await refreshFromRepo(repo)
-    setOpenProjectIds(prev => prev.filter(id => id !== project.id))
     if (activeProjectId === project.id) {
       setActiveProjectId(null)
       setScreen('hub')
@@ -389,43 +315,29 @@ export default function App() {
         <Workbench
           key={activeProject.id}
           project={activeProject}
-          projects={projects}
-          folders={folders}
-          openProjectIds={openProjectIds}
           saveState={saveState}
           storageMode={storageMode}
           language={language}
           preference={preference}
           theme={theme}
           t={t}
-          onLanguageChange={setLanguage}
           onThemeChange={setPreference}
           onCircuitChange={handleCircuitChange}
           onBackToHub={() => void backToHub()}
-          onSelectTab={id => void openProjectById(id)}
-          onCloseTab={id => void closeTab(id)}
-          onOpenProject={id => void openProjectById(id)}
-          onQuickCreateBlank={view => void handleQuickCreateBlank(view)}
-          onOpenNewProjectModal={() => setEditorModal({ mode: 'create' })}
           onRenameProject={handleRenameProject}
-          onEditProjectDetails={proj => setEditorModal({ mode: 'edit', project: proj })}
-          onImportBundleFile={handleImportFile}
+          onEditProjectDetails={proj => setEditorModal(proj)}
         />
         <ProjectModal
           open={Boolean(editorModal)}
-          mode={editorModal?.mode ?? 'create'}
-          initialProject={editorModal?.mode === 'edit' ? editorModal.project : undefined}
+          mode="edit"
+          initialProject={editorModal ?? undefined}
           folders={folders}
           palette={palette}
           t={t}
           onSubmit={async data => {
             const current = editorModal
             setEditorModal(null)
-            if (current?.mode === 'edit') {
-              await handleUpdateProject(current.project.id, data)
-            } else {
-              await handleCreateProject(data)
-            }
+            if (current) await handleUpdateProject(current.id, data)
           }}
           onClose={() => setEditorModal(null)}
         />
@@ -437,7 +349,6 @@ export default function App() {
     <ProjectsHub
       projects={projects}
       folders={folders}
-      openProjectIds={openProjectIds}
       storageMode={storageMode}
       language={language}
       preference={preference}
@@ -448,7 +359,6 @@ export default function App() {
       onLanguageChange={setLanguage}
       onThemeChange={setPreference}
       onOpenProject={project => void openProjectById(project.id)}
-      onReturnToEditor={returnToEditor}
       onCreateProject={handleCreateProject}
       onUpdateProject={handleUpdateProject}
       onRenameProject={(project, name) => handleRenameProject(project.id, name)}

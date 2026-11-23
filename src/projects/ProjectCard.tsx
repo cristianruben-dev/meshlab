@@ -24,8 +24,6 @@ import { formatRelativeTime } from './filters'
 type ProjectCardProps = {
   project: Project
   folder?: Folder
-  layout: 'grid' | 'list'
-  isOpenInTab: boolean
   palette: Palette
   language: Language
   t: Translate
@@ -41,8 +39,6 @@ type ProjectCardProps = {
 export function ProjectCard({
   project,
   folder,
-  layout,
-  isOpenInTab,
   palette,
   language,
   t,
@@ -180,42 +176,6 @@ export function ProjectCard({
     </button>
   )
 
-  if (layout === 'list') {
-    return (
-      <article className="project-row" data-project-id={project.id}>
-        <button type="button" className="project-row-thumb" aria-label={`${t('Open')}: ${project.name}`} onClick={() => onOpen(project)}>
-          <CircuitPreview circuit={project.circuit} preferredView={project.preferredView} boardSettings={project.boardSettings} palette={palette} t={t} compact />
-        </button>
-        <div className="project-row-info">
-          <div className="project-row-title-line">
-            {nameBlock}
-            {isOpenInTab && <span className="open-tab-dot" title={t('Open in tab')}>{t('Open in tab')}</span>}
-          </div>
-          {project.description && <p className="project-desc project-desc-single">{project.description}</p>}
-          {folder && (
-            <div className="project-badges">
-              <span className="folder-chip" style={{ '--folder-color': folder.color } as React.CSSProperties}>
-                <FolderIcon size={11} /> {folder.name}
-              </span>
-            </div>
-          )}
-        </div>
-        <div className="project-row-meta">
-          <span className="view-chip">
-            {project.preferredView === 'board' ? <CircuitBoard size={12} /> : <Waypoints size={12} />}
-            {viewLabel}
-          </span>
-          <span className="meta-mono">{partsCount} {t('parts')} · {wiresCount} {connectionUnit}</span>
-          <span className="meta-time">{updatedText}</span>
-        </div>
-        <div className="project-row-actions">
-          {pinButton}
-          {menu}
-        </div>
-      </article>
-    )
-  }
-
   return (
     <article className="project-card" data-project-id={project.id}>
       <div className="project-card-media" onClick={() => onOpen(project)}>
@@ -225,7 +185,6 @@ export function ProjectCard({
             {project.preferredView === 'board' ? <CircuitBoard size={12} /> : <Waypoints size={12} />}
             {viewLabel}
           </span>
-          {isOpenInTab && <span className="open-tab-dot">{t('Open in tab')}</span>}
         </div>
       </div>
 

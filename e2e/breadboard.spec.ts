@@ -40,9 +40,9 @@ async function createBreadboardProject(
   }
   await page.goto('/')
   const isEs = language === 'es'
-  await expect(page.getByRole('heading', { name: isEs ? 'Mis Proyectos' : 'My Projects' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: isEs ? 'Proyectos' : 'Projects', exact: true })).toBeVisible()
 
-  await page.getByRole('button', { name: isEs ? 'Nuevo proyecto' : 'New project', exact: true }).click()
+  await page.locator('.hub-topbar').getByRole('button', { name: isEs ? 'Nuevo proyecto' : 'New project', exact: true }).click()
   const dialog = page.getByRole('dialog', { name: isEs ? 'Nuevo proyecto' : 'New project' })
   const nextLabel = isEs ? 'Siguiente' : 'Next'
   // Step 1: Project type -> Breadboard

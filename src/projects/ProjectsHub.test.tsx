@@ -60,7 +60,6 @@ function makeProps(overrides: Partial<ProjectsHubProps> = {}, language: Language
   return {
     projects: projectsFixture,
     folders: foldersFixture,
-    openProjectIds: ['p1'],
     storageMode: 'indexeddb',
     language,
     preference: 'system',
@@ -71,7 +70,6 @@ function makeProps(overrides: Partial<ProjectsHubProps> = {}, language: Language
     onLanguageChange: vi.fn(),
     onThemeChange: vi.fn(),
     onOpenProject: vi.fn(),
-    onReturnToEditor: vi.fn(),
     onCreateProject: vi.fn().mockResolvedValue(undefined),
     onUpdateProject: vi.fn().mockResolvedValue(undefined),
     onRenameProject: vi.fn().mockResolvedValue(undefined),
@@ -130,7 +128,7 @@ describe('filterAndSortProjects', () => {
 })
 
 describe('ProjectsHub UI (sidebar-free, tag-free, wizard modal)', () => {
-  it('filters by smart view, folder, and search without sidebar or tags, and switches grid/list views', () => {
+  it('filters by smart view and folder in a grid without search or layout controls', () => {
     const props = makeProps()
     const { container } = render(<ProjectsHub {...props} />)
 
@@ -151,15 +149,12 @@ describe('ProjectsHub UI (sidebar-free, tag-free, wizard modal)', () => {
     expect(screen.getByRole('button', { name: 'Alpha Supply' })).toBeTruthy()
     expect(screen.queryByRole('button', { name: 'Beta Filter' })).toBeNull()
 
-    // Back to All projects and search
     fireEvent.click(screen.getByRole('button', { name: /All projects/ }))
-    fireEvent.change(screen.getByRole('searchbox', { name: 'Search projects' }), { target: { value: 'divider' } })
-    expect(screen.getByRole('button', { name: 'Alpha Supply' })).toBeTruthy()
-    expect(screen.queryByRole('button', { name: 'Beta Filter' })).toBeNull()
-
-    // Toggle list view
-    fireEvent.click(screen.getByRole('button', { name: 'List view' }))
-    expect(screen.getByRole('button', { name: 'List view' }).getAttribute('aria-pressed')).toBe('true')
+    expect(screen.getByRole('button', { name: 'Beta Filter' })).toBeTruthy()
+    expect(screen.queryByRole('searchbox')).toBeNull()
+    expect(screen.queryByRole('combobox', { name: 'Sort projects' })).toBeNull()
+    expect(screen.queryByRole('group', { name: 'View layout' })).toBeNull()
+    expect(screen.getByRole('region', { name: 'Projects' }).className).toBe('project-grid')
   })
 
   it('walks through the 3-step Circuit wizard and submits a blank schematic', () => {
@@ -223,7 +218,7 @@ describe('ProjectsHub UI (sidebar-free, tag-free, wizard modal)', () => {
   })
 
   it('creates a folder from the inline ribbon popover, shows empty state hero SVG, and renders Spanish copy', () => {
-    const props = makeProps({ projects: [], folders: [], openProjectIds: [], storageMode: 'memory' }, 'es')
+    const props = makeProps({ projects: [], folders: [], storageMode: 'memory' }, 'es')
     const { container } = render(<ProjectsHub {...props} />)
 
     expect(screen.getByRole('heading', { name: 'Proyectos' })).toBeTruthy()

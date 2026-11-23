@@ -1,4 +1,4 @@
-/* Meshlab Projects Hub & Multi-Project Tab Strip */
+/* Meshlab Projects Hub & Workbench Header */
 
 .hub {
   position: fixed;
@@ -35,74 +35,14 @@
   flex: none;
 }
 
+.hub-topbar-right {
+  margin-inline-start: auto;
+  flex-wrap: wrap;
+  flex: 0 1 auto;
+}
+
 .hub-sidebar-toggle {
   display: none;
-}
-
-.return-editor-btn {
-  gap: 6px;
-  border-radius: 999px;
-  padding-inline: 10px;
-  font-size: 12px;
-  height: 30px;
-}
-
-.return-count {
-  display: inline-grid;
-  place-items: center;
-  min-width: 18px;
-  height: 18px;
-  padding: 0 5px;
-  border-radius: 999px;
-  background: var(--brand-soft);
-  color: var(--brand);
-  font: 600 11px var(--font-mono);
-}
-
-.hub-search {
-  position: relative;
-  flex: 1 1 260px;
-  max-width: 420px;
-  min-width: 140px;
-  margin-inline: auto;
-}
-
-.hub-search > svg {
-  position: absolute;
-  left: 10px;
-  top: 50%;
-  transform: translateY(-50%);
-  color: var(--muted-foreground);
-  pointer-events: none;
-}
-
-.hub-search > input {
-  height: 34px;
-  padding-left: 33px;
-  padding-right: 28px;
-  border-radius: 10px;
-  background: var(--surface-2);
-  font-size: 13px;
-}
-
-.hub-search-clear {
-  position: absolute;
-  right: 6px;
-  top: 50%;
-  transform: translateY(-50%);
-  display: grid;
-  place-items: center;
-  width: 22px;
-  height: 22px;
-  border: 0;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--muted-foreground);
-}
-
-.hub-search-clear:hover {
-  background: var(--surface-3);
-  color: var(--foreground);
 }
 
 .hub-body {
@@ -478,12 +418,6 @@
   flex-wrap: wrap;
 }
 
-.sort-trigger {
-  min-width: 156px;
-  border-radius: 10px !important;
-  background: var(--card) !important;
-}
-
 .active-filters {
   display: flex;
   align-items: center;
@@ -491,17 +425,11 @@
   flex-wrap: wrap;
 }
 
-/* Grid & List */
+/* Project grid */
 .project-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(276px, 1fr));
   gap: 16px;
-}
-
-.project-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
 }
 
 .project-card {
@@ -554,18 +482,6 @@
   backdrop-filter: blur(8px);
 }
 
-.open-tab-dot {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 2px 8px;
-  border-radius: 999px;
-  font: 600 10.5px var(--font-mono);
-  color: var(--ok);
-  background: var(--ok-soft);
-  border: 1px solid var(--ok-border);
-}
-
 .project-card-body {
   flex: 1 1 auto;
   display: flex;
@@ -612,8 +528,7 @@
   font-size: 13px;
 }
 
-.project-card-actions,
-.project-row-actions {
+.project-card-actions {
   display: flex;
   align-items: center;
   gap: 2px;
@@ -704,52 +619,6 @@
 }
 
 /* List Row */
-.project-row {
-  display: grid;
-  grid-template-columns: 92px minmax(0, 1fr) auto auto;
-  align-items: center;
-  gap: 14px;
-  padding: 10px 12px;
-  border-radius: 14px;
-  background: var(--card);
-  border: 1px solid var(--border);
-  transition: border-color .12s, background .12s;
-}
-
-.project-row:hover {
-  border-color: color-mix(in oklab, var(--brand) 45%, var(--border));
-  background: var(--row-hover);
-}
-
-.project-row-thumb {
-  border: 1px solid var(--hairline);
-  border-radius: 9px;
-  padding: 0;
-  overflow: hidden;
-  background: var(--canvas);
-  display: block;
-}
-
-.project-row-info {
-  min-width: 0;
-  display: grid;
-  gap: 4px;
-}
-
-.project-row-title-line {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-}
-
-.project-row-meta {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  color: var(--muted-foreground);
-}
-
 /* Circuit Preview SVG */
 .circuit-preview {
   width: 100%;
@@ -1154,10 +1023,6 @@
   flex: none;
 }
 
-.project-tab-active .tab-type-icon {
-  color: var(--brand);
-}
-
 .starter-card {
   display: grid;
   align-content: start;
@@ -1266,14 +1131,14 @@
   color: var(--muted-foreground);
 }
 
-/* Workbench Multi-Project Tabs Strip */
-.project-tabs-bar {
+/* Workbench project header */
+.project-header {
   position: absolute;
   z-index: 41;
   top: var(--gutter);
   left: var(--gutter);
   right: var(--gutter);
-  height: var(--tabs-h);
+  height: var(--project-header-h);
   display: flex;
   align-items: center;
   gap: 6px;
@@ -1294,136 +1159,11 @@
   border-radius: 8px;
 }
 
-.tabs-divider {
-  width: 1px;
-  height: 16px;
-  background: var(--border);
-  flex: none;
-}
-
-.project-tablist {
-  flex: 1 1 auto;
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  overflow-x: auto;
-  scrollbar-width: none;
-}
-
-.project-tablist::-webkit-scrollbar {
-  display: none;
-}
-
-.project-tab {
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-  height: 26px;
-  max-width: 196px;
-  padding: 0 4px 0 8px;
-  border-radius: 8px;
-  background: transparent;
-  color: var(--muted-foreground);
-  flex: none;
-  transition: background .12s, color .12s;
-}
-
-.project-tab:hover {
-  background: var(--surface-3);
-  color: var(--foreground);
-}
-
-.project-tab-active,
-.project-tab-active:hover {
-  background: var(--card);
-  color: var(--foreground);
-  box-shadow: var(--shadow-pop);
-}
-
-.dark .project-tab-active,
-.dark .project-tab-active:hover {
-  background: #1b2738;
-}
-
-.project-tab-editing {
-  padding: 0 2px;
-}
-
-.project-tab-editing input {
-  height: 22px;
-  width: 140px;
-  font-size: 12px;
-  padding: 0 6px;
-}
-
-.project-tab-trigger {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-  border: 0;
-  padding: 0;
-  background: transparent;
-  color: inherit;
-  font-size: 12px;
-  font-weight: 550;
-}
-
-.project-tab-name {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  max-width: 140px;
-}
-
-.tab-folder-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 999px;
-  flex: none;
-}
-
-.project-tab-close {
-  display: grid;
-  place-items: center;
-  width: 18px;
-  height: 18px;
-  border: 0;
-  border-radius: 5px;
-  background: transparent;
-  color: var(--muted-foreground);
-  flex: none;
-}
-
-.project-tab-close:hover {
-  background: color-mix(in oklab, var(--foreground) 10%, transparent);
-  color: var(--foreground);
-}
-
-.project-tab-add {
-  flex: none;
-  color: var(--muted-foreground);
-}
-
-.project-tabs-meta {
+.project-header-actions {
   flex: none;
   display: flex;
   align-items: center;
   gap: 4px;
-}
-
-.tab-tag-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  height: 20px;
-  padding: 0 6px;
-  border-radius: 999px;
-  font-size: 10.5px;
-  font-weight: 550;
-  background: color-mix(in oklab, var(--tag-color, var(--brand)) 12%, var(--surface-2));
-  color: var(--foreground);
 }
 
 .save-indicator {
@@ -1453,42 +1193,6 @@
 
 @keyframes spin {
   to { transform: rotate(360deg); }
-}
-
-.tab-switcher-menu {
-  width: 240px;
-  padding: 6px;
-  border-radius: 12px !important;
-  border: 1px solid var(--border);
-  box-shadow: var(--shadow-float);
-  display: grid;
-  gap: 2px;
-}
-
-.tab-switcher-actions,
-.tab-switcher-list {
-  display: grid;
-  gap: 2px;
-}
-
-.tab-switcher-list {
-  max-height: 220px;
-  overflow-y: auto;
-}
-
-.tab-switcher-label {
-  padding: 4px 8px 2px;
-  font-size: 10.5px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: .06em;
-  color: var(--muted-foreground);
-}
-
-.switcher-item-name {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 /* Responsive Hub */
@@ -1538,11 +1242,6 @@
   .hub {
     grid-template-rows: auto minmax(0, 1fr);
   }
-  .hub-search {
-    order: 3;
-    flex: 1 0 100%;
-    max-width: none;
-  }
   .hub-topbar-right {
     margin-left: auto;
   }
@@ -1553,38 +1252,25 @@
   .hub-main {
     padding: 16px 14px 28px;
   }
-  .project-row {
-    grid-template-columns: 72px minmax(0, 1fr) auto;
-  }
-  .project-row-meta {
-    display: none;
-  }
   .starter-grid,
   .modal-grid-2 {
     grid-template-columns: 1fr;
   }
-  .tab-tag-chip,
   .save-indicator-label {
     display: none;
   }
 }
 
 @media (max-width: 639px) {
-  .hub-appearance {
+  .hub-appearance [role="group"] {
     display: none;
   }
-  .return-editor-btn span:first-child {
-    display: none;
-  }
-  .project-tabs-bar {
+  .project-header {
     gap: 4px;
     padding: 0 6px;
   }
   .back-projects-btn span {
     display: none;
-  }
-  .project-tab-name {
-    max-width: 96px;
   }
 }
 
@@ -2187,3 +1873,8 @@
     display: none;
   }
 }
+
+.current-project-name, .current-project-rename { flex: 1; min-width: 0; }
+.current-project-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.82rem; font-weight: 600; }
+.current-project-rename { display: flex; align-items: center; gap: 4px; }
+.current-project-rename input { height: 26px; }
