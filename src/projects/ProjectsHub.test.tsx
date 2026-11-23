@@ -249,11 +249,11 @@ describe('ProjectsHub UI (sidebar-free, tag-free, wizard modal)', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Ocultar' }))
     expect(screen.queryByRole('link', { name: /Apoyar en GitHub/ })).toBeNull()
 
-    // Open About / Release notes modal from footer
+    // Open About modal from footer (minimal, no release notes or DB badges)
     fireEvent.click(screen.getByRole('button', { name: /v1\.0\.0.*Acerca de/ }))
     const dialog = screen.getByRole('dialog', { name: 'Acerca de Meshlab' })
-    expect(dialog.textContent).toContain('Notas de versión')
     expect(dialog.textContent).toContain('v1.0.0')
+    expect(dialog.textContent).not.toContain('IndexedDB')
     fireEvent.keyDown(window, { key: 'Escape' })
     expect(screen.queryByRole('dialog', { name: 'Acerca de Meshlab' })).toBeNull()
   })

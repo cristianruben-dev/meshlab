@@ -1,7 +1,7 @@
 import { useEffect } from 'react'
 import { CircuitBoard, ExternalLink, Star, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { APP_NAME, APP_VERSION, AUTHOR_HANDLE, GITHUB_REPO_SLUG, GITHUB_REPO_URL, RELEASE_NOTES } from '../appMeta'
+import { APP_NAME, APP_VERSION, AUTHOR_HANDLE, GITHUB_REPO_URL } from '../appMeta'
 import type { Translate } from '../locale'
 
 export type AboutModalProps = {
@@ -33,7 +33,7 @@ export function AboutModal({ open, t, onClose, onStarClick }: AboutModalProps) {
         role="dialog"
         aria-modal="true"
         aria-label={t('About Meshlab')}
-        className="modal-card about-modal"
+        className="modal-card modal-card-sm about-modal"
         onClick={event => event.stopPropagation()}
       >
         <div className="modal-head">
@@ -54,40 +54,8 @@ export function AboutModal({ open, t, onClose, onStarClick }: AboutModalProps) {
 
         <div className="modal-body about-modal-body">
           <p className="about-summary">
-            {t('Browser-based DC/transient circuit simulator, 3D breadboard, and IEC 60062 resistor color code calculator. Runs client-side with local IndexedDB storage.')}
+            {t('DC and transient circuit simulator with 2D schematic editor, 3D breadboard, and resistor color code calculator.')}
           </p>
-
-          <div className="about-specs">
-            <div className="about-spec-item">
-              <span>{t('Solver')}</span>
-              <strong>MNA · DC / RC</strong>
-            </div>
-            <div className="about-spec-item">
-              <span>{t('Storage')}</span>
-              <strong>IndexedDB</strong>
-            </div>
-            <div className="about-spec-item">
-              <span>{t('Repository')}</span>
-              <strong>{GITHUB_REPO_SLUG}</strong>
-            </div>
-          </div>
-
-          <section className="about-releases" aria-label={t('Release notes')}>
-            <h3 className="section-label">{t('Release notes')}</h3>
-            {RELEASE_NOTES.map(release => (
-              <div key={release.version} className="about-release-card">
-                <div className="about-release-head">
-                  <span className="about-version-badge">v{release.version}</span>
-                  <span className="about-release-tag">{t(release.tag)}</span>
-                </div>
-                <ul className="about-release-list">
-                  {release.items.map(item => (
-                    <li key={item}>{t(item)}</li>
-                  ))}
-                </ul>
-              </div>
-            ))}
-          </section>
         </div>
 
         <div className="modal-foot about-modal-foot">

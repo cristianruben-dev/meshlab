@@ -638,10 +638,12 @@ export function ProjectsHub({
             </section>
 
             <footer className="hub-local-footer">
-              <div className={storageMode === 'indexeddb' ? 'storage-pill' : 'storage-pill storage-pill-warn'}>
-                <HardDrive size={13} />
-                <span>{storageMode === 'indexeddb' ? t('Local · IndexedDB') : t('Temporary session storage')}</span>
-              </div>
+              {storageMode === 'memory' && (
+                <div className="storage-pill storage-pill-warn">
+                  <HardDrive size={13} />
+                  <span>{t('Temporary session storage')}</span>
+                </div>
+              )}
               <button
                 type="button"
                 className="hub-version-btn"
