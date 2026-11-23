@@ -1752,6 +1752,22 @@
   padding-top: 6px;
 }
 
+.hub-local-footer .storage-pill {
+  width: auto;
+  padding: 6px 14px;
+  border-radius: 999px;
+}
+
+.wizard-modal .template-picker-grid {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+@media (max-width: 640px) {
+  .wizard-modal .template-picker-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
 /* Multi-step Visual Wizard Modal */
 .wizard-modal {
   width: min(680px, 100%);
