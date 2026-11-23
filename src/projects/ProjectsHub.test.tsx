@@ -236,4 +236,25 @@ describe('ProjectsHub UI (sidebar-free, tag-free, wizard modal)', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Crear' }))
     expect(props.onCreateFolder).toHaveBeenCalledWith('Prácticas', expect.any(String))
   })
+
+  it('opens the About & release notes modal from the Hub footer and dismisses the Home-only GitHub star pill', () => {
+    localStorage.clear()
+    sessionStorage.clear()
+    const props = makeProps({}, 'es')
+    render(<ProjectsHub {...props} />)
+
+    // GitHub star pill appears on first Home visit and can be dismissed
+    const starLink = screen.getByRole('link', { name: /Apoyar en GitHub/ })
+    expect(starLink.getAttribute('href')).toBe('https://github.com/cristianruben-dev/meshlab')
+    fireEvent.click(screen.getByRole('button', { name: 'Ocultar' }))
+    expect(screen.queryByRole('link', { name: /Apoyar en GitHub/ })).toBeNull()
+
+    // Open About / Release notes modal from footer
+    fireEvent.click(screen.getByRole('button', { name: /v1\.0\.0.*Acerca de/ }))
+    const dialog = screen.getByRole('dialog', { name: 'Acerca de Meshlab' })
+    expect(dialog.textContent).toContain('Notas de versión')
+    expect(dialog.textContent).toContain('v1.0.0')
+    fireEvent.keyDown(window, { key: 'Escape' })
+    expect(screen.queryByRole('dialog', { name: 'Acerca de Meshlab' })).toBeNull()
+  })
 })

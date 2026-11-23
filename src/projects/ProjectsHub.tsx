@@ -8,10 +8,12 @@ import {
   Clock,
   Download,
   Ellipsis,
+  ExternalLink,
   Folder as FolderIcon,
   FolderPlus,
   HardDrive,
   Inbox,
+  Info,
   Layers,
   LayoutGrid,
   LayoutTemplate,
@@ -30,6 +32,7 @@ import { Input } from '@/components/ui/input'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { TooltipProvider } from '@/components/ui/tooltip'
+import { APP_VERSION, GITHUB_REPO_URL } from '../appMeta'
 import { examples } from '../circuit/examples'
 import { diagnostic, type Language, type Translate } from '../locale'
 import type { Palette } from '../palette'
@@ -37,9 +40,11 @@ import { ACCENT_COLORS, DEFAULT_FOLDER_COLOR, type Folder, type Project } from '
 import type { ThemePreference } from '../theme'
 import { LanguageSelect, ThemeSwitch } from '../workspace/ChromeControls'
 import { ResistorColorModal } from '../tools/ResistorColorTool'
+import { AboutModal } from './AboutModal'
 import { CircuitPreview } from './CircuitPreview'
 import { ConfirmDialog } from './ConfirmDialog'
 import { filterAndSortProjects, isRecentProject, type NavSelection, type ProjectSort, type SmartView } from './filters'
+import { dismissStarNudge, evaluateStarNudge, markGitHubStarred } from './githubStarNudge'
 import { ProjectCard } from './ProjectCard'
 import { ProjectModal, type ProjectModalSubmit, type StartingPoint } from './ProjectModal'
 import { EmptyWorkspaceArt } from './WizardArt'
@@ -144,6 +149,8 @@ export function ProjectsHub({
   const [modal, setModal] = useState<ModalState>(null)
   const [confirm, setConfirm] = useState<ConfirmState>(null)
   const [resistorToolOpen, setResistorToolOpen] = useState(false)
+  const [aboutOpen, setAboutOpen] = useState(false)
+  const [showStarNudge, setShowStarNudge] = useState(() => evaluateStarNudge())
   const [folderPopoverOpen, setFolderPopoverOpen] = useState(false)
   const [newFolderName, setNewFolderName] = useState('')
   const [newFolderColor, setNewFolderColor] = useState<string>(DEFAULT_FOLDER_COLOR)
@@ -635,9 +642,49 @@ export function ProjectsHub({
                 <HardDrive size={13} />
                 <span>{storageMode === 'indexeddb' ? t('Local · IndexedDB') : t('Temporary session storage')}</span>
               </div>
+              <button
+                type="button"
+                className="hub-version-btn"
+                onClick={() => setAboutOpen(true)}
+              >
+                <Info size={13} aria-hidden="true" />
+                <span className="hub-version-code">v{APP_VERSION}</span>
+                <span aria-hidden="true">·</span>
+                <span>{t('About')}</span>
+              </button>
             </footer>
           </main>
         </div>
+
+        {showStarNudge && (
+          <aside className="hub-star-nudge" aria-label={t('GitHub repository')}>
+            <a
+              className="hub-star-link"
+              href={GITHUB_REPO_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={() => {
+                markGitHubStarred()
+                setShowStarNudge(false)
+              }}
+            >
+              <Star size={13} className="hub-star-icon" aria-hidden="true" />
+              <span>{t('Star on GitHub')}</span>
+              <ExternalLink size={11} className="hub-star-ext" aria-hidden="true" />
+            </a>
+            <button
+              type="button"
+              className="hub-star-dismiss"
+              aria-label={t('Dismiss')}
+              onClick={() => {
+                dismissStarNudge()
+                setShowStarNudge(false)
+              }}
+            >
+              <X size={12} />
+            </button>
+          </aside>
+        )}
 
         <ProjectModal
           open={Boolean(modal)}
@@ -674,6 +721,16 @@ export function ProjectsHub({
           language={language}
           t={t}
           onClose={() => setResistorToolOpen(false)}
+        />
+
+        <AboutModal
+          open={aboutOpen}
+          t={t}
+          onClose={() => setAboutOpen(false)}
+          onStarClick={() => {
+            markGitHubStarred()
+            setShowStarNudge(false)
+          }}
         />
       </div>
     </TooltipProvider>
