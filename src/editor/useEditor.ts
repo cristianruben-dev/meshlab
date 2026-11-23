@@ -121,13 +121,13 @@ export function useEditor(fallback: Circuit, options: EditorOptions = {}) {
     const scale = Math.min(2, 680 / (maxX - minX + 110), 450 / (maxY - minY + 110))
     setView({ scale, x: 400 - (minX + maxX) / 2 * scale, y: 270 - (minY + maxY) / 2 * scale })
   }
-  function add(kind: Kind, at = world({ x: 400, y: 260 })) {
+  function add(kind: Kind, at = world({ x: 400, y: 260 }), value?: number) {
     const meta = catalog[kind]
     let number = 1
     while (circuit.components.some(c => c.label === `${meta.prefix}${number}`)) number++
     let x = snap(at.x), y = snap(at.y)
     while (circuit.components.some(c => c.x === x && c.y === y)) { x += GRID; y += GRID }
-    const component: Component = { id: id(), kind, x, y, rotation: kind === 'ground' ? 90 : 0, label: `${meta.prefix}${number}`, value: meta.value,
+    const component: Component = { id: id(), kind, x, y, rotation: kind === 'ground' ? 90 : 0, label: `${meta.prefix}${number}`, value: value ?? meta.value,
       ...(kind === 'switch' ? { closed: false } : {}), ...(kind === 'potentiometer' ? { position: .5 } : {}) }
     commit({ ...circuit, components: [...circuit.components, component] })
     setSelected([component.id]); setTool('select')

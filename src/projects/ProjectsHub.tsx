@@ -14,11 +14,12 @@ import {
   Inbox,
   Layers,
   LayoutGrid,
+  LayoutTemplate,
   List,
+  Palette as PaletteIcon,
   Pencil,
   Plus,
   Search,
-  Sparkles,
   Star,
   Trash2,
   Upload,
@@ -35,6 +36,7 @@ import type { Palette } from '../palette'
 import { ACCENT_COLORS, DEFAULT_FOLDER_COLOR, type Folder, type Project } from '../storage/types'
 import type { ThemePreference } from '../theme'
 import { LanguageSelect, ThemeSwitch } from '../workspace/ChromeControls'
+import { ResistorColorModal } from '../tools/ResistorColorTool'
 import { CircuitPreview } from './CircuitPreview'
 import { ConfirmDialog } from './ConfirmDialog'
 import { filterAndSortProjects, isRecentProject, type NavSelection, type ProjectSort, type SmartView } from './filters'
@@ -141,6 +143,7 @@ export function ProjectsHub({
   const [templatesOpen, setTemplatesOpen] = useState(true)
   const [modal, setModal] = useState<ModalState>(null)
   const [confirm, setConfirm] = useState<ConfirmState>(null)
+  const [resistorToolOpen, setResistorToolOpen] = useState(false)
   const [folderPopoverOpen, setFolderPopoverOpen] = useState(false)
   const [newFolderName, setNewFolderName] = useState('')
   const [newFolderColor, setNewFolderColor] = useState<string>(DEFAULT_FOLDER_COLOR)
@@ -187,13 +190,13 @@ export function ProjectsHub({
     ? activeFolder.name
     : activeSelection.kind === 'smart'
       ? activeSelection.view === 'all'
-        ? t('My Projects')
+        ? t('Projects')
         : activeSelection.view === 'recent'
           ? t('Recent')
           : activeSelection.view === 'pinned'
             ? t('Favorites')
             : t('Unfiled')
-      : t('My Projects')
+      : t('Projects')
 
   const hasActiveFilters = Boolean(query.trim()) || activeSelection.kind === 'folder' || (activeSelection.kind === 'smart' && activeSelection.view !== 'all')
   const defaultNewFolderId = activeSelection.kind === 'folder' ? activeSelection.folderId : null
@@ -300,6 +303,9 @@ export function ProjectsHub({
             </Button>
             <Button variant="ghost" size="sm" onClick={onExportBackup} disabled={projects.length === 0 && folders.length === 0}>
               <Download /> <span className="hub-btn-label">{t('Export backup')}</span>
+            </Button>
+            <Button variant="ghost" size="sm" onClick={() => setResistorToolOpen(true)}>
+              <PaletteIcon /> <span className="hub-btn-label">{t('Color code')}</span>
             </Button>
             <span className="topbar-divider hub-hide-sm" aria-hidden="true" />
             <div className="hub-appearance">
@@ -539,14 +545,14 @@ export function ProjectsHub({
             {projects.length === 0 ? (
               <section className="hub-empty-hero">
                 <EmptyWorkspaceArt />
-                <h2>{t('Your local circuit workspace')}</h2>
-                <p>{t('Create a blank circuit, start from a template, or import an existing Meshlab JSON file. Everything stays 100% private in your browser.')}</p>
+                <h2>{t('No projects yet')}</h2>
+                <p>{t('Create a circuit, load a template, or import a JSON file.')}</p>
                 <div className="hub-empty-actions">
                   <Button onClick={() => setModal({ mode: 'create', startingPoint: 'blank-schematic' })}>
-                    <Plus /> {t('New blank project')}
+                    <Plus /> {t('New project')}
                   </Button>
                   <Button variant="outline" onClick={() => setModal({ mode: 'create', startingPoint: 'template' })}>
-                    <Sparkles /> {t('From template')}
+                    <LayoutTemplate /> {t('From template')}
                   </Button>
                   <Button variant="outline" onClick={() => fileInput.current?.click()}>
                     <Upload /> {t('Import')}
@@ -587,7 +593,7 @@ export function ProjectsHub({
               </section>
             )}
 
-            <section className="template-strip" aria-label={t('Quick-start templates')}>
+            <section className="template-strip" aria-label={t('Templates')}>
               <button
                 type="button"
                 className="template-strip-toggle"
@@ -595,8 +601,8 @@ export function ProjectsHub({
                 onClick={() => setTemplatesOpen(prev => !prev)}
               >
                 <span className="template-strip-heading">
-                  <Sparkles size={14} />
-                  <span>{t('Quick-start templates')}</span>
+                  <LayoutTemplate size={14} />
+                  <span>{t('Templates')}</span>
                 </span>
                 <span className="template-strip-action">
                   {t(templatesOpen ? 'Hide templates' : 'Show templates')}
@@ -627,7 +633,7 @@ export function ProjectsHub({
             <footer className="hub-local-footer">
               <div className={storageMode === 'indexeddb' ? 'storage-pill' : 'storage-pill storage-pill-warn'}>
                 <HardDrive size={13} />
-                <span>{storageMode === 'indexeddb' ? t('100% local · IndexedDB') : t('Temporary session storage')}</span>
+                <span>{storageMode === 'indexeddb' ? t('Local · IndexedDB') : t('Temporary session storage')}</span>
               </div>
             </footer>
           </main>
@@ -661,6 +667,13 @@ export function ProjectsHub({
           t={t}
           onConfirm={() => void handleConfirmDelete()}
           onCancel={() => setConfirm(null)}
+        />
+
+        <ResistorColorModal
+          open={resistorToolOpen}
+          language={language}
+          t={t}
+          onClose={() => setResistorToolOpen(false)}
         />
       </div>
     </TooltipProvider>

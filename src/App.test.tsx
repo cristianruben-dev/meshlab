@@ -23,7 +23,7 @@ async function clearWorkspaceDb() {
 
 async function openTemplateFromHub(template: string, language: 'en' | 'es' = 'en') {
   const result = render(<App />)
-  const title = language === 'es' ? 'Mis Proyectos' : 'My Projects'
+  const title = language === 'es' ? 'Proyectos' : 'Projects'
   await screen.findByRole('heading', { name: title })
   const escaped = template.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
   fireEvent.click(screen.getByRole('button', { name: new RegExp(escaped) }))
@@ -44,11 +44,11 @@ afterEach(cleanup)
 describe('local projects hub & multi-project workspace', () => {
   it('starts on the Projects Hub without forcing an example circuit and allows creating and switching two open projects', async () => {
     render(<App />)
-    await screen.findByRole('heading', { name: 'My Projects' })
-    expect(screen.getByRole('heading', { name: 'Your local circuit workspace' })).toBeTruthy()
+    await screen.findByRole('heading', { name: 'Projects' })
+    expect(screen.getByRole('heading', { name: 'No projects yet' })).toBeTruthy()
 
     // Create blank project A through the 3-step wizard
-    fireEvent.click(screen.getByRole('button', { name: 'New project' }))
+    fireEvent.click(screen.getAllByRole('button', { name: 'New project' })[0])
     const dialog = screen.getByRole('dialog', { name: 'New project' })
     fireEvent.click(within(dialog).getByRole('button', { name: 'Next' }))
     fireEvent.click(within(dialog).getByRole('button', { name: 'Next' }))
@@ -60,7 +60,7 @@ describe('local projects hub & multi-project workspace', () => {
 
     // Return to Hub and open Voltage Divider template as a second project
     fireEvent.click(screen.getByRole('button', { name: 'Projects' }))
-    await screen.findByRole('heading', { name: 'My Projects' })
+    await screen.findByRole('heading', { name: 'Projects' })
     expect(screen.getByRole('button', { name: 'Blank Project' })).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: /Voltage Divider/ }))
 
@@ -82,7 +82,7 @@ describe('local projects hub & multi-project workspace', () => {
   it('migrates legacy localStorage circuit automatically into the Projects Hub', async () => {
     localStorage.setItem(LEGACY_CIRCUIT_KEY, JSON.stringify(examples['LED + Switch']))
     render(<App />)
-    await screen.findByRole('heading', { name: 'My Projects' })
+    await screen.findByRole('heading', { name: 'Projects' })
     const recovered = await screen.findByRole('button', { name: 'Recovered Circuit' })
     fireEvent.click(recovered)
     const row = await screen.findByRole('row', { name: /^D1 / })
@@ -174,7 +174,7 @@ describe('circuit workbench', () => {
     fireEvent.keyDown(window, { key: 'r' })
     // Return to Hub flushes pending IndexedDB writes immediately
     fireEvent.click(screen.getByRole('button', { name: 'Projects' }))
-    await screen.findByRole('heading', { name: 'My Projects' })
+    await screen.findByRole('heading', { name: 'Projects' })
     expect(screen.getByText('5 parts · 6 wires')).toBeTruthy()
     unmount()
   })
@@ -303,5 +303,36 @@ describe('circuit workbench', () => {
     expect(document.documentElement.classList.contains('dark')).toBe(true)
     await act(async () => { fireEvent.keyDown(themes.getByRole('button', { name: 'Light theme' }), { key: 'Escape' }) })
     await vi.waitFor(() => expect(screen.queryByRole('dialog', { name: 'More actions' })).toBeNull())
+  })
+
+  it('opens the resistor color code calculator from the Hub, Editor topbar, and Inspector to add and update resistors', async () => {
+    render(<App />)
+    await screen.findByRole('heading', { name: 'Projects' })
+
+    // 1. Open from Hub topbar and close via Escape
+    fireEvent.click(screen.getByRole('button', { name: 'Color code' }))
+    expect(screen.getByRole('dialog', { name: 'Resistor color code' })).toBeTruthy()
+    fireEvent.keyDown(window, { key: 'Escape' })
+    expect(screen.queryByRole('dialog', { name: 'Resistor color code' })).toBeNull()
+
+    // 2. Open a project and add a 4.7 kΩ resistor from the Editor's Color code button
+    fireEvent.click(screen.getByRole('button', { name: /Voltage Divider/ }))
+    await screen.findByRole('group', { name: 'SCHEMATIC TOOLS' })
+    fireEvent.click(screen.getByRole('button', { name: 'Color code' }))
+    const dialog = screen.getByRole('dialog', { name: 'Resistor color code' })
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Add to circuit' }))
+    expect(screen.queryByRole('dialog', { name: 'Resistor color code' })).toBeNull()
+
+    // Newly added resistor is selected in the Inspector with its 4.7 kΩ mini color preview
+    const miniCard = screen.getByRole('button', { name: /Color code:.*Yellow · Violet · Red · Gold/ })
+    fireEvent.click(miniCard)
+
+    // 3. Edit its value via Value -> Colors and apply back to R3
+    const editDialog = screen.getByRole('dialog', { name: 'Resistor color code' })
+    fireEvent.click(within(editDialog).getByRole('button', { name: 'Value → Colors' }))
+    fireEvent.change(within(editDialog).getByRole('textbox', { name: 'Resistance value' }), { target: { value: '2k2' } })
+    fireEvent.click(within(editDialog).getByRole('button', { name: 'Apply to R3' }))
+    expect(screen.queryByRole('dialog', { name: 'Resistor color code' })).toBeNull()
+    expect(screen.getByRole('button', { name: /Color code:.*Red · Red · Red · Gold/ })).toBeTruthy()
   })
 })

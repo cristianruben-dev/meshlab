@@ -22,6 +22,7 @@ import {
   Crosshair,
   Hand,
   MousePointer2,
+  Palette,
   Pause,
   Play,
   Plus,
@@ -64,6 +65,7 @@ import { parseImportJson } from '../storage/io'
 import { blankCircuit, type Folder, type PreferredView, type Project } from '../storage/types'
 import type { Theme, ThemePreference } from '../theme'
 import { palettes } from '../palette'
+import { ResistorColorModal, ResistorMiniPreview } from '../tools/ResistorColorTool'
 import { LanguageSelect, ThemeSwitch } from './ChromeControls'
 import { IconTool, Launcher, Panel } from './Panel'
 import { panelSides, usePanels, type PanelId } from './panels'
@@ -160,6 +162,7 @@ export function Workbench({
   })
   const panels = usePanels(viewMode)
   const [menuOpen, setMenuOpen] = useState(false)
+  const [resistorTool, setResistorTool] = useState<{ open: boolean; initialOhms?: number; targetId?: string }>({ open: false })
   const [probe, setProbe] = useState('')
   const [running, setRunning] = useState(true)
   const [speed, setSpeed] = useState(1)
@@ -373,6 +376,18 @@ export function Workbench({
     return exportPng(copy, editor.view)
   }
 
+  function openColorTool(part?: Component) {
+    setMenuOpen(false)
+    setResistorTool({
+      open: true,
+      initialOhms: part?.kind === 'resistor' ? part.value : undefined,
+      targetId: part?.kind === 'resistor' ? part.id : undefined,
+    })
+  }
+  const targetResistor = resistorTool.targetId
+    ? editor.circuit.components.find(c => c.id === resistorTool.targetId && c.kind === 'resistor')
+    : inspected?.kind === 'resistor' ? inspected : undefined
+
   function handleLibraryPartClick(kind: Kind) {
     if (schematic) {
       editor.add(kind)
@@ -400,7 +415,15 @@ export function Workbench({
       </div>
     </>,
     inspector: <div className="inspector-body">
-      {inspected ? <Properties t={t} key={inspected.id} part={inspected} update={(changes, preview) => editor.update(inspected, changes, preview)} /> :
+      {inspected ? (
+        <Properties
+          t={t}
+          key={inspected.id}
+          part={inspected}
+          update={(changes, preview) => editor.update(inspected, changes, preview)}
+          onOpenColorTool={inspected.kind === 'resistor' ? () => openColorTool(inspected) : undefined}
+        />
+      ) :
         <div className="empty-state"><span className="empty-state-icon"><MousePointer2 size={16} /></span><strong>{wire ? t('Wire selected') : breadboard.selectedJumper ? t('Selected jumper wire') : editor.selected.length ? `${editor.selected.length} ${t('items selected')}` : t('Nothing selected')}</strong>
           <small>{wire ? `${t('Current')}: ${metric(flows[wire.id], 'A')}` : breadboard.selectedJumper ? `${breadboard.selectedJumper.from} ↔ ${breadboard.selectedJumper.to}` : t('Select a component to edit its parameters.')}</small></div>}
       {inspected && <div className="measurements"><Reading label={t('Voltage drop')} value={metric(read?.voltage, 'V')} /><Reading label={t('Current')} value={metric(inspected.kind === 'ground' ? grounds[inspected.id] : read?.current, 'A')} /><Reading label={t('Power')} value={metric(read?.power, 'W')} /></div>}
@@ -497,6 +520,9 @@ export function Workbench({
         {wide && <div className="file-actions">
           {examplesSelect}
           {fileButtons('sm')}
+          <Button variant="ghost" size="sm" onClick={() => openColorTool(inspected?.kind === 'resistor' ? inspected : undefined)}>
+            <Palette /><Label>{t('Color code')}</Label>
+          </Button>
           <span className="topbar-divider" aria-hidden="true" />
           {themeSwitch}
           {languageSelect}
@@ -509,6 +535,12 @@ export function Workbench({
               <h3 className="section-label">{t('Circuit file')}</h3>
               {examplesSelect}
               <div className="more-grid">{fileButtons('default')}</div>
+            </section>
+            <section className="more-section">
+              <h3 className="section-label">{t('Tools')}</h3>
+              <Button variant="ghost" size="default" onClick={() => openColorTool(inspected?.kind === 'resistor' ? inspected : undefined)}>
+                <Palette /><Label>{t('Color code')}</Label>
+              </Button>
             </section>
             <section className="more-section">
               <h3 className="section-label">{t('Appearance')}</h3>
@@ -677,10 +709,36 @@ export function Workbench({
       {placed('right', true).length > 0 && <aside className="dock dock-right">{placed('right', true).map(renderPanel)}</aside>}
       {placed('bottom', true).length > 0 && <section className="dock dock-bottom" aria-label={t('Pinned sheets')}>{placed('bottom', true).map(renderPanel)}</section>}
     </div>
+    <ResistorColorModal
+      open={resistorTool.open}
+      initialOhms={resistorTool.initialOhms ?? targetResistor?.value}
+      targetResistorLabel={targetResistor?.label}
+      language={language}
+      t={t}
+      onClose={() => setResistorTool({ open: false })}
+      onApplyToResistor={targetResistor ? ohms => editor.update(targetResistor, { value: ohms }) : undefined}
+      onAddResistor={ohms => {
+        if (schematic) {
+          editor.add('resistor', undefined, ohms)
+        } else {
+          breadboard.startPlaceNew('resistor', ohms)
+        }
+      }}
+    />
   </TooltipProvider>
 }
 
-function Properties({ part, update, t }: { t: Translate; part: Component; update: (changes: Partial<Component>, preview?: boolean) => void }) {
+function Properties({
+  part,
+  update,
+  onOpenColorTool,
+  t,
+}: {
+  t: Translate
+  part: Component
+  update: (changes: Partial<Component>, preview?: boolean) => void
+  onOpenColorTool?: () => void
+}) {
   const meta = catalog[part.kind]
   const [label, setLabel] = useState(part.label)
   const [draft, setDraft] = useState(metric(part.value, meta.unit))
@@ -718,6 +776,9 @@ function Properties({ part, update, t }: { t: Translate; part: Component; update
       <Slider aria-label={t('Component value')} min={signed ? -extent : 0} max={extent} step={extent / 1000} value={[liveValue ?? part.value]}
         onValueChange={v => onValue(one(v), true)} onValueCommitted={v => onValue(one(v), false)} />
     </>}
+    {part.kind === 'resistor' && onOpenColorTool && (
+      <ResistorMiniPreview ohms={liveValue ?? part.value} t={t} onClick={onOpenColorTool} />
+    )}
     {part.kind === 'potentiometer' && <div className="speed"><div><span>{t('Wiper')}</span><span>{Math.round((livePosition ?? part.position ?? .5) * 100)}%</span></div>
       <Slider aria-label={t('Wiper position')} min={0} max={1} step={.01} value={[livePosition ?? part.position ?? .5]} onValueChange={v => onPosition(one(v), true)} onValueCommitted={v => onPosition(one(v), false)} /></div>}
     {part.kind !== 'ground' && <details className="ratings">

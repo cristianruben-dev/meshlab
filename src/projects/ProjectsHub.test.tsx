@@ -136,7 +136,7 @@ describe('ProjectsHub UI (sidebar-free, tag-free, wizard modal)', () => {
 
     expect(container.querySelector('.hub-sidebar')).toBeNull()
     expect(screen.queryByText('Tags')).toBeNull()
-    expect(screen.getByRole('heading', { name: 'My Projects' })).toBeTruthy()
+    expect(screen.getByRole('heading', { name: 'Projects' })).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Beta Filter' })).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Alpha Supply' })).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Scratchpad' })).toBeTruthy()
@@ -226,9 +226,9 @@ describe('ProjectsHub UI (sidebar-free, tag-free, wizard modal)', () => {
     const props = makeProps({ projects: [], folders: [], openProjectIds: [], storageMode: 'memory' }, 'es')
     const { container } = render(<ProjectsHub {...props} />)
 
-    expect(screen.getByRole('heading', { name: 'Mis Proyectos' })).toBeTruthy()
+    expect(screen.getByRole('heading', { name: 'Proyectos' })).toBeTruthy()
     expect(screen.getByRole('alert').textContent).toMatch(/IndexedDB no está disponible/)
-    expect(screen.getByRole('heading', { name: 'Tu espacio local de circuitos' })).toBeTruthy()
+    expect(screen.getByRole('heading', { name: 'Sin proyectos' })).toBeTruthy()
     expect(container.querySelector('svg.hub-hero-art')).toBeTruthy()
 
     fireEvent.click(screen.getByRole('button', { name: 'Nueva carpeta' }))

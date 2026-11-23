@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { ArrowLeft, ArrowRight, Check, CircuitBoard, Folder as FolderIcon, Sparkles, Waypoints, X } from 'lucide-react'
+import { ArrowLeft, ArrowRight, Check, CircuitBoard, Folder as FolderIcon, LayoutTemplate, Waypoints, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
@@ -228,12 +228,12 @@ export function ProjectModal({
               {mode === 'create' && (
                 <p className="wizard-subtitle">
                   {step === 'type'
-                    ? t('Choose what you want to build')
+                    ? t('Project type')
                     : step === 'size'
-                      ? t('Choose the physical size of your breadboard')
+                      ? t('Breadboard configuration')
                       : step === 'start'
-                        ? t('Start from scratch or use a template')
-                        : t('Name and organize your project')}
+                        ? t('Initial circuit')
+                        : t('Project details')}
                 </p>
               )}
             </div>
@@ -290,7 +290,7 @@ export function ProjectModal({
                 </div>
                 <div className="wizard-choice-copy">
                   <strong><Waypoints size={15} /> {t('Circuit')}</strong>
-                  <small>{t('Design and simulate 2D electrical schematics.')}</small>
+                  <small>{t('2D schematic editor and DC/transient MNA solver.')}</small>
                 </div>
               </button>
 
@@ -308,7 +308,7 @@ export function ProjectModal({
                 </div>
                 <div className="wizard-choice-copy">
                   <strong><CircuitBoard size={15} /> {t('Breadboard')}</strong>
-                  <small>{t('Build and test circuits on a 3D breadboard.')}</small>
+                  <small>{t('3D breadboard layout and voltage probing.')}</small>
                 </div>
               </button>
             </div>
@@ -376,7 +376,7 @@ export function ProjectModal({
                   </div>
                   <div className="wizard-choice-copy">
                     <strong>{t(projectType === 'board' ? 'Blank breadboard' : 'Blank schematic')}</strong>
-                    <small>{t(projectType === 'board' ? 'Start with a clean empty breadboard.' : 'Start with an empty schematic canvas.')}</small>
+                    <small>{t(projectType === 'board' ? 'Empty board layout.' : 'Empty schematic.')}</small>
                   </div>
                 </button>
 
@@ -392,8 +392,8 @@ export function ProjectModal({
                     {startFromTemplate && <span className="wizard-check-badge" aria-hidden="true"><Check size={13} /></span>}
                   </div>
                   <div className="wizard-choice-copy">
-                    <strong><Sparkles size={14} /> {t('From template')}</strong>
-                    <small>{t('Start from a ready-to-edit example circuit.')}</small>
+                    <strong><LayoutTemplate size={14} /> {t('From template')}</strong>
+                    <small>{t('Prebuilt reference circuit.')}</small>
                   </div>
                 </button>
               </div>

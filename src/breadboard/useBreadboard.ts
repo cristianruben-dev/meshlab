@@ -9,7 +9,7 @@ export type BoardTool = 'select' | 'wire' | 'probe'
 export type CameraMode = '3d' | 'top'
 
 export type PendingBoardAction =
-  | { type: 'place-new'; kind: Kind; firstSocket?: string }
+  | { type: 'place-new'; kind: Kind; value?: number; firstSocket?: string }
   | { type: 'place-existing'; componentId: string; kind: Kind; firstSocket?: string }
   | { type: 'move'; placementId: string; componentId: string; kind: Kind; firstSocket?: string }
   | { type: 'wire'; from: string }
@@ -101,11 +101,11 @@ export function useBreadboard({ circuit, layout, shape, selected, onSelect, onCo
     setToolState(next)
   }, [])
 
-  const startPlaceNew = useCallback((kind: Kind) => {
+  const startPlaceNew = useCallback((kind: Kind, value?: number) => {
     setSelectedJumperId(null)
     setFeedback(null)
     setToolState('select')
-    setPending({ type: 'place-new', kind })
+    setPending({ type: 'place-new', kind, ...(value !== undefined ? { value } : {}) })
   }, [])
 
   const startPlaceExisting = useCallback((component: Component) => {
@@ -228,7 +228,7 @@ export function useBreadboard({ circuit, layout, shape, selected, onSelect, onCo
           id: makeId(),
           kind: pending.kind,
           label: nextLabel(circuit, pending.kind),
-          value: meta.value,
+          value: pending.value ?? meta.value,
           x: point.x,
           y: point.y,
           rotation: pending.kind === 'ground' ? 90 : 0,
