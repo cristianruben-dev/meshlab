@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { examples } from '../circuit/examples'
 import { translate, type Language } from '../locale'
 import { palettes } from '../palette'
-import { blankCircuit, type Folder, type Project, type Tag } from '../storage/types'
+import { blankCircuit, type Folder, type Project } from '../storage/types'
 import { filterAndSortProjects } from './filters'
 import { ProjectsHub, type ProjectsHubProps } from './ProjectsHub'
 
@@ -16,11 +16,6 @@ const foldersFixture: Folder[] = [
   { id: 'f2', name: 'Power', color: '#e08a00', order: 1, createdAt: 2000 },
 ]
 
-const tagsFixture: Tag[] = [
-  { id: 't1', name: 'Analog', color: '#2f6fd6', createdAt: 1000 },
-  { id: 't2', name: 'RC', color: '#8b4fd6', createdAt: 1000 },
-]
-
 const now = Date.now()
 const projectsFixture: Project[] = [
   {
@@ -28,7 +23,7 @@ const projectsFixture: Project[] = [
     name: 'Beta Filter',
     description: 'Low-pass RC network',
     folderId: 'f1',
-    tagIds: ['t1', 't2'],
+    tagIds: [],
     pinned: true,
     preferredView: 'schematic',
     circuit: examples['RC Charging'],
@@ -40,7 +35,7 @@ const projectsFixture: Project[] = [
     name: 'Alpha Supply',
     description: 'Voltage divider test',
     folderId: 'f2',
-    tagIds: ['t1'],
+    tagIds: [],
     pinned: false,
     preferredView: 'board',
     circuit: examples['Voltage Divider'],
@@ -65,7 +60,6 @@ function makeProps(overrides: Partial<ProjectsHubProps> = {}, language: Language
   return {
     projects: projectsFixture,
     folders: foldersFixture,
-    tags: tagsFixture,
     openProjectIds: ['p1'],
     storageMode: 'indexeddb',
     language,
@@ -91,64 +85,57 @@ function makeProps(overrides: Partial<ProjectsHubProps> = {}, language: Language
     onCreateFolder: vi.fn().mockResolvedValue(undefined),
     onUpdateFolder: vi.fn().mockResolvedValue(undefined),
     onDeleteFolder: vi.fn().mockResolvedValue(undefined),
-    onCreateTag: vi.fn().mockResolvedValue({ id: 't3', name: 'New', color: '#0b7a6c', createdAt: now }),
-    onUpdateTag: vi.fn().mockResolvedValue(undefined),
-    onDeleteTag: vi.fn().mockResolvedValue(undefined),
     onQuickTemplate: vi.fn().mockResolvedValue(undefined),
     ...overrides,
   }
 }
 
 describe('filterAndSortProjects', () => {
-  it('combines smart views, folders, multi-tag filters, search, and sorting', () => {
-    expect(filterAndSortProjects(projectsFixture, tagsFixture, {
+  it('combines smart views, folders, search, and sorting', () => {
+    expect(filterAndSortProjects(projectsFixture, {
       selection: { kind: 'smart', view: 'pinned' },
-      selectedTagIds: [],
       query: '',
       sort: 'updated',
       now,
     }).map(p => p.id)).toEqual(['p1'])
 
-    expect(filterAndSortProjects(projectsFixture, tagsFixture, {
+    expect(filterAndSortProjects(projectsFixture, {
       selection: { kind: 'smart', view: 'unfiled' },
-      selectedTagIds: [],
       query: '',
       sort: 'updated',
       now,
     }).map(p => p.id)).toEqual(['p3'])
 
-    expect(filterAndSortProjects(projectsFixture, tagsFixture, {
+    expect(filterAndSortProjects(projectsFixture, {
       selection: { kind: 'smart', view: 'recent' },
-      selectedTagIds: [],
       query: '',
       sort: 'name',
       now,
     }).map(p => p.id)).toEqual(['p2', 'p1'])
 
-    expect(filterAndSortProjects(projectsFixture, tagsFixture, {
-      selection: { kind: 'smart', view: 'all' },
-      selectedTagIds: ['t1', 't2'],
+    expect(filterAndSortProjects(projectsFixture, {
+      selection: { kind: 'folder', folderId: 'f1' },
       query: '',
       sort: 'updated',
       now,
     }).map(p => p.id)).toEqual(['p1'])
 
-    // Search matches tag names and descriptions as well as project titles.
-    expect(filterAndSortProjects(projectsFixture, tagsFixture, {
+    expect(filterAndSortProjects(projectsFixture, {
       selection: { kind: 'smart', view: 'all' },
-      selectedTagIds: [],
-      query: 'analog',
+      query: 'divider',
       sort: 'name',
       now,
-    }).map(p => p.id)).toEqual(['p2', 'p1'])
+    }).map(p => p.id)).toEqual(['p2'])
   })
 })
 
-describe('ProjectsHub UI', () => {
-  it('filters by smart view, folder, tag, and search query, and switches between grid and list views', () => {
+describe('ProjectsHub UI (sidebar-free, tag-free, wizard modal)', () => {
+  it('filters by smart view, folder, and search without sidebar or tags, and switches grid/list views', () => {
     const props = makeProps()
-    render(<ProjectsHub {...props} />)
+    const { container } = render(<ProjectsHub {...props} />)
 
+    expect(container.querySelector('.hub-sidebar')).toBeNull()
+    expect(screen.queryByText('Tags')).toBeNull()
     expect(screen.getByRole('heading', { name: 'My Projects' })).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Beta Filter' })).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Alpha Supply' })).toBeTruthy()
@@ -159,13 +146,13 @@ describe('ProjectsHub UI', () => {
     expect(screen.getByRole('button', { name: 'Beta Filter' })).toBeTruthy()
     expect(screen.queryByRole('button', { name: 'Alpha Supply' })).toBeNull()
 
-    // Back to All projects and filter by tag + search
-    fireEvent.click(screen.getByRole('button', { name: /All projects/ }))
-    fireEvent.click(screen.getByRole('button', { name: 'RC' }))
-    expect(screen.getByRole('button', { name: 'Beta Filter' })).toBeTruthy()
-    expect(screen.queryByRole('button', { name: 'Alpha Supply' })).toBeNull()
+    // Filter by folder pill
+    fireEvent.click(screen.getByRole('button', { name: /^Power\b/ }))
+    expect(screen.getByRole('button', { name: 'Alpha Supply' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Beta Filter' })).toBeNull()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Clear tag filters' }))
+    // Back to All projects and search
+    fireEvent.click(screen.getByRole('button', { name: /All projects/ }))
     fireEvent.change(screen.getByRole('searchbox', { name: 'Search projects' }), { target: { value: 'divider' } })
     expect(screen.getByRole('button', { name: 'Alpha Supply' })).toBeTruthy()
     expect(screen.queryByRole('button', { name: 'Beta Filter' })).toBeNull()
@@ -175,15 +162,24 @@ describe('ProjectsHub UI', () => {
     expect(screen.getByRole('button', { name: 'List view' }).getAttribute('aria-pressed')).toBe('true')
   })
 
-  it('opens the New Project modal defaulting to Blank schematic and submits a blank circuit', async () => {
+  it('walks through the 3-step Circuit wizard and submits a blank schematic', () => {
     const props = makeProps()
     render(<ProjectsHub {...props} />)
 
     fireEvent.click(screen.getByRole('button', { name: 'New project' }))
     const dialog = screen.getByRole('dialog', { name: 'New project' })
-    expect(within(dialog).getByRole('radio', { name: /Circuit/ }).getAttribute('aria-checked')).toBe('true')
-    expect(within(dialog).getByRole('radio', { name: /Blank schematic/ }).getAttribute('aria-checked')).toBe('true')
 
+    // Step 1: Type (defaults to Circuit with SVG artwork)
+    expect(within(dialog).getByRole('radio', { name: /Circuit/ }).getAttribute('aria-checked')).toBe('true')
+    expect(dialog.querySelector('svg.wizard-art')).toBeTruthy()
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Next' }))
+
+    // Step 2: Start (defaults to Blank schematic)
+    expect(within(dialog).getByRole('radio', { name: /Blank schematic/ }).getAttribute('aria-checked')).toBe('true')
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Next' }))
+
+    // Step 3: Details (no tags field)
+    expect(within(dialog).queryByText('Tags')).toBeNull()
     fireEvent.change(within(dialog).getByRole('textbox', { name: 'Project name' }), { target: { value: 'My Blank Lab' } })
     fireEvent.click(within(dialog).getByRole('button', { name: 'Create project' }))
 
@@ -194,16 +190,27 @@ describe('ProjectsHub UI', () => {
     }))
   })
 
-  it('asks for breadboard size when creating a Breadboard project', async () => {
+  it('walks through the 4-step Breadboard wizard choosing Full size with SVG board previews', () => {
     const props = makeProps()
     render(<ProjectsHub {...props} />)
 
     fireEvent.click(screen.getByRole('button', { name: 'New project' }))
     const dialog = screen.getByRole('dialog', { name: 'New project' })
-    fireEvent.click(within(dialog).getByRole('radio', { name: /Breadboard/ }))
 
-    // Breadboard size selector appears with Mini, Half, Full
+    // Step 1: Select Breadboard
+    fireEvent.click(within(dialog).getByRole('radio', { name: /Breadboard/ }))
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Next' }))
+
+    // Step 2: Select Full breadboard size
+    expect(dialog.querySelectorAll('svg.wizard-size-art')).toHaveLength(3)
     fireEvent.click(within(dialog).getByRole('radio', { name: /Full.*830/ }))
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Next' }))
+
+    // Step 3: Keep Blank breadboard
+    expect(within(dialog).getByRole('radio', { name: /Blank breadboard/ }).getAttribute('aria-checked')).toBe('true')
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Next' }))
+
+    // Step 4: Details
     fireEvent.change(within(dialog).getByRole('textbox', { name: 'Project name' }), { target: { value: 'Full Proto' } })
     fireEvent.click(within(dialog).getByRole('button', { name: 'Create project' }))
 
@@ -215,13 +222,14 @@ describe('ProjectsHub UI', () => {
     }))
   })
 
-  it('creates a folder from the sidebar, shows empty state when no projects exist, and renders Spanish copy', () => {
-    const props = makeProps({ projects: [], folders: [], tags: [], openProjectIds: [], storageMode: 'memory' }, 'es')
-    render(<ProjectsHub {...props} />)
+  it('creates a folder from the inline ribbon popover, shows empty state hero SVG, and renders Spanish copy', () => {
+    const props = makeProps({ projects: [], folders: [], openProjectIds: [], storageMode: 'memory' }, 'es')
+    const { container } = render(<ProjectsHub {...props} />)
 
     expect(screen.getByRole('heading', { name: 'Mis Proyectos' })).toBeTruthy()
     expect(screen.getByRole('alert').textContent).toMatch(/IndexedDB no está disponible/)
     expect(screen.getByRole('heading', { name: 'Tu espacio local de circuitos' })).toBeTruthy()
+    expect(container.querySelector('svg.hub-hero-art')).toBeTruthy()
 
     fireEvent.click(screen.getByRole('button', { name: 'Nueva carpeta' }))
     fireEvent.change(screen.getByRole('textbox', { name: 'Nombre de la carpeta' }), { target: { value: 'Prácticas' } })

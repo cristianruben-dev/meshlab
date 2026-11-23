@@ -1,5 +1,5 @@
 import type { Language, Translate } from '../locale'
-import type { Project, Tag } from '../storage/types'
+import type { Project } from '../storage/types'
 
 export type SmartView = 'all' | 'recent' | 'pinned' | 'unfiled'
 export type NavSelection = { kind: 'smart'; view: SmartView } | { kind: 'folder'; folderId: string }
@@ -17,17 +17,14 @@ export function isRecentProject(project: Project, now = Date.now()): boolean {
 
 export function filterAndSortProjects(
   projects: Project[],
-  tags: Tag[],
   options: {
     selection: NavSelection
-    selectedTagIds: string[]
     query: string
     sort: ProjectSort
     now?: number
   },
 ): Project[] {
   const now = options.now ?? Date.now()
-  const tagNameById = new Map(tags.map(tag => [tag.id, normalizeSearch(tag.name)]))
   const q = normalizeSearch(options.query)
 
   const filtered = projects.filter(project => {
@@ -41,17 +38,10 @@ export function filterAndSortProjects(
       if (!isRecentProject(project, now)) return false
     }
 
-    if (options.selectedTagIds.length > 0) {
-      for (const required of options.selectedTagIds) {
-        if (!project.tagIds.includes(required)) return false
-      }
-    }
-
     if (q) {
       const haystack = [
         normalizeSearch(project.name),
         normalizeSearch(project.description),
-        ...project.tagIds.map(id => tagNameById.get(id) ?? ''),
       ].join(' ')
       if (!haystack.includes(q)) return false
     }

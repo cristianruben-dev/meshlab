@@ -47,9 +47,11 @@ describe('local projects hub & multi-project workspace', () => {
     await screen.findByRole('heading', { name: 'My Projects' })
     expect(screen.getByRole('heading', { name: 'Your local circuit workspace' })).toBeTruthy()
 
-    // Create blank project A
+    // Create blank project A through the 3-step wizard
     fireEvent.click(screen.getByRole('button', { name: 'New project' }))
     const dialog = screen.getByRole('dialog', { name: 'New project' })
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Next' }))
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Next' }))
     fireEvent.change(within(dialog).getByRole('textbox', { name: 'Project name' }), { target: { value: 'Blank Project' } })
     fireEvent.click(within(dialog).getByRole('button', { name: 'Create project' }))
 

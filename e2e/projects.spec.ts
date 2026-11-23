@@ -2,31 +2,30 @@ import { readFile } from 'node:fs/promises'
 import { expect, test } from '@playwright/test'
 import type { ProjectFile, WorkspaceBundle } from '../src/storage/types'
 
-test('organizes projects with folders and tags, edits two projects in tabs, and persists locally in IndexedDB', async ({ page }) => {
+test('organizes projects with inline folders (no sidebar or tags), creates via wizard, edits in tabs, and persists in IndexedDB', async ({ page }) => {
   await page.goto('/')
 
-  // Starts on the Projects Hub without forcing a pre-built circuit.
+  // Starts on the sidebar-free, tag-free Projects Hub without forcing a pre-built circuit.
   await expect(page.getByRole('heading', { name: 'My Projects' })).toBeVisible()
   await expect(page.getByRole('heading', { name: 'Your local circuit workspace' })).toBeVisible()
+  await expect(page.locator('.hub-sidebar')).toHaveCount(0)
+  await expect(page.getByText('Tags', { exact: true })).toHaveCount(0)
 
-  // Create a folder and a tag from the sidebar.
+  // Create a folder from the inline filter ribbon.
   await page.getByRole('button', { name: 'New folder' }).click()
   await page.getByRole('textbox', { name: 'Folder name' }).fill('Power Lab')
   await page.getByRole('button', { name: 'Create', exact: true }).click()
   await expect(page.getByRole('button', { name: /^Power Lab\b/ })).toBeVisible()
 
-  await page.getByRole('button', { name: 'New tag' }).click()
-  await page.getByRole('textbox', { name: 'Tag name' }).fill('Analog')
-  await page.getByRole('button', { name: 'Create', exact: true }).click()
-  await expect(page.getByRole('button', { name: 'Analog', exact: true })).toBeVisible()
-
-  // Create Project 1: blank schematic inside Power Lab with tag Analog.
-  await page.getByRole('button', { name: 'New project' }).click()
+  // Create Project 1: blank schematic inside Power Lab via the 3-step visual wizard.
+  await page.getByRole('button', { name: 'New project', exact: true }).click()
   const dialog = page.getByRole('dialog', { name: 'New project' })
+  await expect(dialog.getByRole('radio', { name: /Circuit/ })).toBeChecked()
+  await dialog.getByRole('button', { name: 'Next' }).click()
   await expect(dialog.getByRole('radio', { name: /Blank schematic/ })).toBeChecked()
+  await dialog.getByRole('button', { name: 'Next' }).click()
   await dialog.getByRole('textbox', { name: 'Project name' }).fill('Blank Prototype')
   await dialog.getByRole('combobox', { name: 'Folder' }).selectOption({ label: 'Power Lab' })
-  await dialog.getByRole('button', { name: 'Analog', exact: true }).click()
   await dialog.getByRole('button', { name: 'Create project' }).click()
 
   await expect(page.getByText('Start a new circuit')).toBeVisible()
@@ -37,14 +36,16 @@ test('organizes projects with folders and tags, edits two projects in tabs, and 
   await expect(page.getByText('1 parts · 0 wires')).toBeVisible()
   await expect(page.locator('.save-indicator')).toContainText('Saved locally')
 
-  // Return to Projects Hub and create Project 2 from a template.
+  // Return to Projects Hub and create Project 2 from a template through the wizard.
   await page.getByRole('button', { name: 'Projects', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'My Projects' })).toBeVisible()
-  await page.getByRole('button', { name: 'New project' }).click()
+  await page.getByRole('button', { name: 'New project', exact: true }).click()
   const dialog2 = page.getByRole('dialog', { name: 'New project' })
-  await dialog2.getByRole('textbox', { name: 'Project name' }).fill('Divider Reference')
+  await dialog2.getByRole('button', { name: 'Next' }).click()
   await dialog2.getByRole('radio', { name: /From template/ }).click()
   await dialog2.getByRole('button', { name: 'Voltage Divider' }).click()
+  await dialog2.getByRole('button', { name: 'Next' }).click()
+  await dialog2.getByRole('textbox', { name: 'Project name' }).fill('Divider Reference')
   await dialog2.getByRole('button', { name: 'Create project' }).click()
 
   await expect(page.getByRole('tab', { name: 'Divider Reference' })).toHaveAttribute('aria-selected', 'true')
@@ -71,9 +72,8 @@ test('organizes projects with folders and tags, edits two projects in tabs, and 
   await expect(page.getByRole('button', { name: 'Blank Prototype', exact: true })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Divider Reference', exact: true })).toBeVisible()
   await expect(page.getByRole('button', { name: /^Power Lab\b/ })).toBeVisible()
-  await expect(page.getByRole('button', { name: 'Analog', exact: true })).toBeVisible()
 
-  // Filter by folder + tag + search.
+  // Filter by folder pill.
   await page.getByRole('button', { name: /^Power Lab\b/ }).click()
   await expect(page.getByRole('button', { name: 'Blank Prototype', exact: true })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Divider Reference', exact: true })).toHaveCount(0)
@@ -90,22 +90,19 @@ test('exports and imports both a single project file and a full workspace backup
   await page.goto('/')
   await expect(page.getByRole('heading', { name: 'My Projects' })).toBeVisible()
 
-  // Create folder, tag, and a project from template.
+  // Create folder and a project from template via wizard.
   await page.getByRole('button', { name: 'New folder' }).click()
   await page.getByRole('textbox', { name: 'Folder name' }).fill('Archive Set')
   await page.getByRole('button', { name: 'Create', exact: true }).click()
 
-  await page.getByRole('button', { name: 'New tag' }).click()
-  await page.getByRole('textbox', { name: 'Tag name' }).fill('Verified')
-  await page.getByRole('button', { name: 'Create', exact: true }).click()
-
-  await page.getByRole('button', { name: 'New project' }).click()
+  await page.getByRole('button', { name: 'New project', exact: true }).click()
   const dialog = page.getByRole('dialog', { name: 'New project' })
-  await dialog.getByRole('textbox', { name: 'Project name' }).fill('Wheatstone Study')
-  await dialog.getByRole('combobox', { name: 'Folder' }).selectOption({ label: 'Archive Set' })
-  await dialog.getByRole('button', { name: 'Verified', exact: true }).click()
+  await dialog.getByRole('button', { name: 'Next' }).click()
   await dialog.getByRole('radio', { name: /From template/ }).click()
   await dialog.getByRole('button', { name: 'Wheatstone Bridge' }).click()
+  await dialog.getByRole('button', { name: 'Next' }).click()
+  await dialog.getByRole('textbox', { name: 'Project name' }).fill('Wheatstone Study')
+  await dialog.getByRole('combobox', { name: 'Folder' }).selectOption({ label: 'Archive Set' })
   await dialog.getByRole('button', { name: 'Create project' }).click()
 
   await expect(page.getByRole('rowheader', { name: 'R5', exact: true })).toBeVisible()
@@ -124,7 +121,6 @@ test('exports and imports both a single project file and a full workspace backup
   expect(projectPayload.kind).toBe('meshlab-project')
   expect(projectPayload.version).toBe(1)
   expect(projectPayload.project.folderName).toBe('Archive Set')
-  expect(projectPayload.project.tags.map(t => t.name)).toEqual(['Verified'])
 
   // Export full workspace backup (.meshlab-bundle.json)
   const [backupDownload] = await Promise.all([
@@ -137,7 +133,6 @@ test('exports and imports both a single project file and a full workspace backup
   expect(bundlePayload.kind).toBe('meshlab-bundle')
   expect(bundlePayload.projects).toHaveLength(1)
   expect(bundlePayload.folders).toHaveLength(1)
-  expect(bundlePayload.tags).toHaveLength(1)
 
   // Import single project back (safe merge without overwriting existing project)
   const [chooser1] = await Promise.all([
@@ -177,5 +172,4 @@ test('exports and imports both a single project file and a full workspace backup
   await expect(page.getByRole('status')).toContainText('Backup imported.')
   await expect(page.getByRole('button', { name: 'Wheatstone Study', exact: true })).toBeVisible()
   await expect(page.getByRole('button', { name: /^Archive Set\b/ })).toBeVisible()
-  await expect(page.getByRole('button', { name: 'Verified', exact: true })).toBeVisible()
 })

@@ -5,39 +5,48 @@ import {
   ChevronDown,
   ChevronUp,
   CircuitBoard,
+  Clock,
   Download,
+  Ellipsis,
+  Folder as FolderIcon,
+  FolderPlus,
+  HardDrive,
+  Inbox,
+  Layers,
   LayoutGrid,
   List,
-  PanelLeft,
+  Pencil,
   Plus,
   Search,
   Sparkles,
+  Star,
+  Trash2,
   Upload,
   X,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { examples } from '../circuit/examples'
 import { diagnostic, type Language, type Translate } from '../locale'
 import type { Palette } from '../palette'
-import type { Folder, Project, Tag } from '../storage/types'
+import { ACCENT_COLORS, DEFAULT_FOLDER_COLOR, type Folder, type Project } from '../storage/types'
 import type { ThemePreference } from '../theme'
 import { LanguageSelect, ThemeSwitch } from '../workspace/ChromeControls'
 import { CircuitPreview } from './CircuitPreview'
 import { ConfirmDialog } from './ConfirmDialog'
-import { filterAndSortProjects, type NavSelection, type ProjectSort } from './filters'
-import { FolderSidebar } from './FolderSidebar'
+import { filterAndSortProjects, isRecentProject, type NavSelection, type ProjectSort, type SmartView } from './filters'
 import { ProjectCard } from './ProjectCard'
 import { ProjectModal, type ProjectModalSubmit, type StartingPoint } from './ProjectModal'
+import { EmptyWorkspaceArt } from './WizardArt'
 
 const templateNames = Object.keys(examples)
 
 type ConfirmState =
   | { kind: 'project'; project: Project }
   | { kind: 'folder'; folder: Folder }
-  | { kind: 'tag'; tag: Tag }
   | null
 
 type ModalState =
@@ -48,7 +57,6 @@ type ModalState =
 export type ProjectsHubProps = {
   projects: Project[]
   folders: Folder[]
-  tags: Tag[]
   openProjectIds: string[]
   storageMode: 'indexeddb' | 'memory'
   language: Language
@@ -74,16 +82,31 @@ export type ProjectsHubProps = {
   onCreateFolder: (name: string, color: string) => Promise<void>
   onUpdateFolder: (id: string, changes: { name?: string; color?: string }) => Promise<void>
   onDeleteFolder: (folder: Folder) => Promise<void>
-  onCreateTag: (name: string, color: string) => Promise<Tag>
-  onUpdateTag: (id: string, changes: { name?: string; color?: string }) => Promise<void>
-  onDeleteTag: (tag: Tag) => Promise<void>
   onQuickTemplate: (templateName: string, folderId: string | null) => Promise<void>
+}
+
+function ColorSwatches({ value, onChange, t }: { value: string; onChange: (color: string) => void; t: Translate }) {
+  return (
+    <div className="color-swatches" role="radiogroup" aria-label={t('Color')}>
+      {ACCENT_COLORS.map(color => (
+        <button
+          key={color}
+          type="button"
+          role="radio"
+          aria-checked={value === color}
+          aria-label={color}
+          className={value === color ? 'swatch swatch-active' : 'swatch'}
+          style={{ background: color }}
+          onClick={() => onChange(color)}
+        />
+      ))}
+    </div>
+  )
 }
 
 export function ProjectsHub({
   projects,
   folders,
-  tags,
   openProjectIds,
   storageMode,
   language,
@@ -109,47 +132,55 @@ export function ProjectsHub({
   onCreateFolder,
   onUpdateFolder,
   onDeleteFolder,
-  onCreateTag,
-  onUpdateTag,
-  onDeleteTag,
   onQuickTemplate,
 }: ProjectsHubProps) {
   const [selection, setSelection] = useState<NavSelection>({ kind: 'smart', view: 'all' })
-  const [selectedTagIds, setSelectedTagIds] = useState<string[]>([])
   const [query, setQuery] = useState('')
   const [sort, setSort] = useState<ProjectSort>('updated')
   const [layout, setLayout] = useState<'grid' | 'list'>('grid')
   const [templatesOpen, setTemplatesOpen] = useState(true)
-  const [sidebarOpen, setSidebarOpen] = useState(false)
   const [modal, setModal] = useState<ModalState>(null)
   const [confirm, setConfirm] = useState<ConfirmState>(null)
+  const [folderPopoverOpen, setFolderPopoverOpen] = useState(false)
+  const [newFolderName, setNewFolderName] = useState('')
+  const [newFolderColor, setNewFolderColor] = useState<string>(DEFAULT_FOLDER_COLOR)
+  const [editingFolder, setEditingFolder] = useState<Folder | null>(null)
+  const [editFolderName, setEditFolderName] = useState('')
+  const [editFolderColor, setEditFolderColor] = useState<string>(DEFAULT_FOLDER_COLOR)
   const fileInput = useRef<HTMLInputElement>(null)
 
   const folderById = useMemo(() => new Map(folders.map(folder => [folder.id, folder])), [folders])
-  const tagById = useMemo(() => new Map(tags.map(tag => [tag.id, tag])), [tags])
   const openSet = useMemo(() => new Set(openProjectIds), [openProjectIds])
 
-  // If the currently viewed folder gets deleted, fall back to All projects.
   const activeSelection: NavSelection =
     selection.kind === 'folder' && !folderById.has(selection.folderId)
       ? { kind: 'smart', view: 'all' }
       : selection
 
-  const activeSelectedTagIds = useMemo(
-    () => selectedTagIds.filter(id => tagById.has(id)),
-    [selectedTagIds, tagById],
-  )
-
   const visibleProjects = useMemo(
     () =>
-      filterAndSortProjects(projects, tags, {
+      filterAndSortProjects(projects, {
         selection: activeSelection,
-        selectedTagIds: activeSelectedTagIds,
         query,
         sort,
       }),
-    [projects, tags, activeSelection, activeSelectedTagIds, query, sort],
+    [projects, activeSelection, query, sort],
   )
+
+  const smartCounts: Record<SmartView, number> = useMemo(() => ({
+    all: projects.length,
+    recent: projects.filter(p => isRecentProject(p)).length,
+    pinned: projects.filter(p => p.pinned).length,
+    unfiled: projects.filter(p => p.folderId === null).length,
+  }), [projects])
+
+  const folderCounts = useMemo(() => {
+    const counts = new Map<string, number>()
+    for (const project of projects) {
+      if (project.folderId) counts.set(project.folderId, (counts.get(project.folderId) ?? 0) + 1)
+    }
+    return counts
+  }, [projects])
 
   const activeFolder = activeSelection.kind === 'folder' ? folderById.get(activeSelection.folderId) : undefined
   const headingTitle = activeFolder
@@ -164,16 +195,11 @@ export function ProjectsHub({
             : t('Unfiled')
       : t('My Projects')
 
-  const hasActiveFilters = Boolean(query.trim()) || activeSelectedTagIds.length > 0 || activeSelection.kind === 'folder' || (activeSelection.kind === 'smart' && activeSelection.view !== 'all')
+  const hasActiveFilters = Boolean(query.trim()) || activeSelection.kind === 'folder' || (activeSelection.kind === 'smart' && activeSelection.view !== 'all')
   const defaultNewFolderId = activeSelection.kind === 'folder' ? activeSelection.folderId : null
-
-  function toggleTagFilter(tagId: string) {
-    setSelectedTagIds(prev => prev.includes(tagId) ? prev.filter(id => id !== tagId) : [...prev, tagId])
-  }
 
   function clearFilters() {
     setQuery('')
-    setSelectedTagIds([])
     setSelection({ kind: 'smart', view: 'all' })
   }
 
@@ -188,37 +214,51 @@ export function ProjectsHub({
     }
   }
 
+  async function handleCreateFolderSubmit(event: React.FormEvent) {
+    event.preventDefault()
+    const trimmed = newFolderName.trim()
+    if (!trimmed) return
+    await onCreateFolder(trimmed, newFolderColor)
+    setNewFolderName('')
+    setNewFolderColor(ACCENT_COLORS[(folders.length + 1) % ACCENT_COLORS.length])
+    setFolderPopoverOpen(false)
+  }
+
+  async function handleEditFolderSubmit(event: React.FormEvent) {
+    event.preventDefault()
+    if (!editingFolder) return
+    const trimmed = editFolderName.trim()
+    if (!trimmed) return
+    await onUpdateFolder(editingFolder.id, { name: trimmed, color: editFolderColor })
+    setEditingFolder(null)
+  }
+
   async function handleConfirmDelete() {
     if (!confirm) return
     const target = confirm
     setConfirm(null)
     if (target.kind === 'project') {
       await onDeleteProject(target.project)
-    } else if (target.kind === 'folder') {
+    } else {
       if (selection.kind === 'folder' && selection.folderId === target.folder.id) {
         setSelection({ kind: 'smart', view: 'all' })
       }
       await onDeleteFolder(target.folder)
-    } else {
-      setSelectedTagIds(prev => prev.filter(id => id !== target.tag.id))
-      await onDeleteTag(target.tag)
     }
   }
 
+  const smartItems: Array<{ view: SmartView; label: string; icon: React.ReactNode }> = [
+    { view: 'all', label: t('All projects'), icon: <Layers size={13} /> },
+    { view: 'recent', label: t('Recent'), icon: <Clock size={13} /> },
+    { view: 'pinned', label: t('Favorites'), icon: <Star size={13} /> },
+    ...(folders.length > 0 ? [{ view: 'unfiled' as const, label: t('Unfiled'), icon: <Inbox size={13} /> }] : []),
+  ]
+
   return (
     <TooltipProvider>
-      <div className="hub">
+      <div className="hub hub-no-sidebar">
         <header className="hub-topbar">
           <div className="hub-topbar-left">
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              className="hub-sidebar-toggle"
-              aria-label={t('Open folders and tags')}
-              onClick={() => setSidebarOpen(true)}
-            >
-              <PanelLeft size={16} />
-            </Button>
             <div className="brand">
               <div className="brand-icon"><CircuitBoard size={17} /></div>
               <div className="brand-text">
@@ -241,7 +281,7 @@ export function ProjectsHub({
               type="search"
               value={query}
               aria-label={t('Search projects')}
-              placeholder={t('Search projects, descriptions, or tags…')}
+              placeholder={t('Search projects or descriptions…')}
               onChange={event => setQuery(event.target.value)}
             />
             {query && (
@@ -258,7 +298,7 @@ export function ProjectsHub({
             <Button variant="outline" size="sm" onClick={() => fileInput.current?.click()}>
               <Upload /> <span className="hub-btn-label">{t('Import')}</span>
             </Button>
-            <Button variant="ghost" size="sm" onClick={onExportBackup} disabled={projects.length === 0 && folders.length === 0 && tags.length === 0}>
+            <Button variant="ghost" size="sm" onClick={onExportBackup} disabled={projects.length === 0 && folders.length === 0}>
               <Download /> <span className="hub-btn-label">{t('Export backup')}</span>
             </Button>
             <span className="topbar-divider hub-hide-sm" aria-hidden="true" />
@@ -281,30 +321,8 @@ export function ProjectsHub({
           />
         </header>
 
-        <div className="hub-body">
-          <FolderSidebar
-            projects={projects}
-            folders={folders}
-            tags={tags}
-            selection={activeSelection}
-            selectedTagIds={activeSelectedTagIds}
-            storageMode={storageMode}
-            mobileOpen={sidebarOpen}
-            t={t}
-            onCloseMobile={() => setSidebarOpen(false)}
-            onSelectNav={setSelection}
-            onToggleTagFilter={toggleTagFilter}
-            onClearTagFilters={() => setSelectedTagIds([])}
-            onCreateFolder={onCreateFolder}
-            onUpdateFolder={onUpdateFolder}
-            onDeleteFolder={folder => setConfirm({ kind: 'folder', folder })}
-            onExportFolder={onExportFolder}
-            onCreateTag={async (name, color) => { await onCreateTag(name, color) }}
-            onUpdateTag={onUpdateTag}
-            onDeleteTag={tag => setConfirm({ kind: 'tag', tag })}
-          />
-
-          <main className="hub-main">
+        <div className="hub-body hub-body-full">
+          <main className="hub-main hub-main-centered">
             {storageMode === 'memory' && (
               <div role="alert" className="hub-banner hub-banner-warn">
                 <AlertTriangle size={15} />
@@ -370,34 +388,157 @@ export function ProjectsHub({
               </div>
             </div>
 
-            {activeSelectedTagIds.length > 0 && (
-              <div className="active-filters">
-                {activeSelectedTagIds.map(id => {
-                  const tag = tagById.get(id)
-                  if (!tag) return null
+            <nav className="hub-filter-ribbon" aria-label={t('Projects')}>
+              <div className="hub-filter-group">
+                {smartItems.map(item => {
+                  const active = activeSelection.kind === 'smart' && activeSelection.view === item.view
                   return (
                     <button
-                      key={tag.id}
+                      key={item.view}
                       type="button"
-                      className="tag-pill tag-pill-active"
-                      style={{ '--tag-color': tag.color } as React.CSSProperties}
-                      onClick={() => toggleTagFilter(tag.id)}
+                      className={active ? 'hub-pill hub-pill-active' : 'hub-pill'}
+                      aria-pressed={active}
+                      onClick={() => setSelection({ kind: 'smart', view: item.view })}
                     >
-                      <span className="tag-dot" aria-hidden="true" />
-                      <span>{tag.name}</span>
-                      <X size={11} />
+                      {item.icon}
+                      <span>{item.label}</span>
+                      <span className="hub-pill-count">{smartCounts[item.view]}</span>
                     </button>
                   )
                 })}
-                <button type="button" className="clear-link" onClick={clearFilters}>
-                  {t('Clear filters')}
-                </button>
+              </div>
+
+              <span className="hub-ribbon-sep" aria-hidden="true" />
+
+              <div className="hub-filter-group hub-folders-strip">
+                {folders.map(folder => {
+                  const active = activeSelection.kind === 'folder' && activeSelection.folderId === folder.id
+                  const count = folderCounts.get(folder.id) ?? 0
+                  return (
+                    <div key={folder.id} className={active ? 'folder-pill-wrap folder-pill-wrap-active' : 'folder-pill-wrap'}>
+                      <button
+                        type="button"
+                        className="folder-pill-btn"
+                        aria-pressed={active}
+                        onClick={() => setSelection({ kind: 'folder', folderId: folder.id })}
+                      >
+                        <FolderIcon size={13} style={{ color: folder.color }} />
+                        <span>{folder.name}</span>
+                        <span className="hub-pill-count">{count}</span>
+                      </button>
+                      <Popover>
+                        <PopoverTrigger
+                          render={
+                            <button
+                              type="button"
+                              className="folder-pill-more"
+                              aria-label={`${t('Folder actions')}: ${folder.name}`}
+                            />
+                          }
+                        >
+                          <Ellipsis size={13} />
+                        </PopoverTrigger>
+                        <PopoverContent className="action-menu" align="end">
+                          <button
+                            type="button"
+                            className="action-menu-item"
+                            onClick={() => {
+                              setEditingFolder(folder)
+                              setEditFolderName(folder.name)
+                              setEditFolderColor(folder.color)
+                            }}
+                          >
+                            <Pencil size={13} /> {t('Edit folder')}
+                          </button>
+                          <button
+                            type="button"
+                            className="action-menu-item"
+                            onClick={() => onExportFolder(folder)}
+                          >
+                            <Download size={13} /> {t('Export folder')}
+                          </button>
+                          <div className="action-menu-sep" role="separator" />
+                          <button
+                            type="button"
+                            className="action-menu-item action-menu-danger"
+                            onClick={() => setConfirm({ kind: 'folder', folder })}
+                          >
+                            <Trash2 size={13} /> {t('Delete folder')}
+                          </button>
+                        </PopoverContent>
+                      </Popover>
+                    </div>
+                  )
+                })}
+
+                <Popover open={folderPopoverOpen} onOpenChange={setFolderPopoverOpen}>
+                  <PopoverTrigger
+                    render={
+                      <button type="button" className="hub-pill hub-pill-add">
+                        <FolderPlus size={13} />
+                        <span>{t('New folder')}</span>
+                      </button>
+                    }
+                  />
+                  <PopoverContent className="folder-popover" align="start">
+                    <form className="inline-editor" onSubmit={handleCreateFolderSubmit}>
+                      <Input
+                        autoFocus
+                        value={newFolderName}
+                        maxLength={80}
+                        aria-label={t('Folder name')}
+                        placeholder={t('Folder name')}
+                        onChange={event => setNewFolderName(event.target.value)}
+                      />
+                      <ColorSwatches value={newFolderColor} onChange={setNewFolderColor} t={t} />
+                      <div className="inline-editor-actions">
+                        <Button type="button" variant="ghost" size="xs" onClick={() => setFolderPopoverOpen(false)}>
+                          {t('Cancel')}
+                        </Button>
+                        <Button type="submit" size="xs" disabled={!newFolderName.trim()}>
+                          {t('Create')}
+                        </Button>
+                      </div>
+                    </form>
+                  </PopoverContent>
+                </Popover>
+              </div>
+            </nav>
+
+            {editingFolder && (
+              <div className="modal-backdrop" onClick={() => setEditingFolder(null)}>
+                <form
+                  role="dialog"
+                  aria-modal="true"
+                  aria-label={t('Edit folder')}
+                  className="confirm-card"
+                  onClick={event => event.stopPropagation()}
+                  onSubmit={handleEditFolderSubmit}
+                >
+                  <h2>{t('Edit folder')}</h2>
+                  <Input
+                    autoFocus
+                    value={editFolderName}
+                    maxLength={80}
+                    aria-label={t('Folder name')}
+                    onChange={event => setEditFolderName(event.target.value)}
+                  />
+                  <ColorSwatches value={editFolderColor} onChange={setEditFolderColor} t={t} />
+                  <div className="confirm-actions">
+                    <Button type="button" variant="ghost" size="sm" onClick={() => setEditingFolder(null)}>
+                      {t('Cancel')}
+                    </Button>
+                    <Button type="submit" size="sm" disabled={!editFolderName.trim()}>
+                      {t('Save')}
+                    </Button>
+                  </div>
+                </form>
               </div>
             )}
 
             {projects.length === 0 ? (
               <section className="hub-empty-hero">
-                <span className="hub-empty-icon" aria-hidden="true"><CircuitBoard size={28} /></span>
+                <EmptyWorkspaceArt />
                 <h2>{t('Your local circuit workspace')}</h2>
                 <p>{t('Create a blank circuit, start from a template, or import an existing Meshlab JSON file. Everything stays 100% private in your browser.')}</p>
                 <div className="hub-empty-actions">
@@ -415,7 +556,7 @@ export function ProjectsHub({
             ) : visibleProjects.length === 0 ? (
               <section className="hub-empty-filtered">
                 <h2>{t('No projects match your filters')}</h2>
-                <p>{t('Try adjusting your search query, folder, or selected tags.')}</p>
+                <p>{t('Try adjusting your search query or selected folder.')}</p>
                 {hasActiveFilters && (
                   <Button variant="outline" size="sm" onClick={clearFilters}>
                     {t('Clear filters')}
@@ -429,7 +570,6 @@ export function ProjectsHub({
                     key={project.id}
                     project={project}
                     folder={project.folderId ? folderById.get(project.folderId) : undefined}
-                    tags={project.tagIds.map(id => tagById.get(id)).filter((tag): tag is Tag => Boolean(tag))}
                     layout={layout}
                     isOpenInTab={openSet.has(project.id)}
                     palette={palette}
@@ -483,6 +623,13 @@ export function ProjectsHub({
                 </div>
               )}
             </section>
+
+            <footer className="hub-local-footer">
+              <div className={storageMode === 'indexeddb' ? 'storage-pill' : 'storage-pill storage-pill-warn'}>
+                <HardDrive size={13} />
+                <span>{storageMode === 'indexeddb' ? t('100% local · IndexedDB') : t('Temporary session storage')}</span>
+              </div>
+            </footer>
           </main>
         </div>
 
@@ -494,39 +641,23 @@ export function ProjectsHub({
           defaultStartingPoint={modal?.mode === 'create' ? modal.startingPoint : undefined}
           defaultTemplate={modal?.mode === 'create' ? modal.template : undefined}
           folders={folders}
-          tags={tags}
           palette={palette}
           t={t}
-          onCreateTag={onCreateTag}
           onSubmit={handleModalSubmit}
           onClose={() => setModal(null)}
         />
 
         <ConfirmDialog
           open={Boolean(confirm)}
-          title={
-            confirm?.kind === 'project'
-              ? t('Delete project?')
-              : confirm?.kind === 'folder'
-                ? t('Delete folder?')
-                : t('Delete tag?')
-          }
+          title={confirm?.kind === 'project' ? t('Delete project?') : t('Delete folder?')}
           description={
             confirm?.kind === 'project'
               ? `${confirm.project.name} — ${t('This permanently removes the project from your browser storage.')}`
               : confirm?.kind === 'folder'
                 ? `${confirm.folder.name} — ${t('Projects inside this folder will move to Unfiled and will not be deleted.')}`
-                : confirm?.kind === 'tag'
-                  ? `${confirm.tag.name} — ${t('This tag will be removed from all projects.')}`
-                  : ''
+                : ''
           }
-          confirmLabel={
-            confirm?.kind === 'project'
-              ? t('Delete project')
-              : confirm?.kind === 'folder'
-                ? t('Delete folder')
-                : t('Delete tag')
-          }
+          confirmLabel={confirm?.kind === 'project' ? t('Delete project') : t('Delete folder')}
           t={t}
           onConfirm={() => void handleConfirmDelete()}
           onCancel={() => setConfirm(null)}

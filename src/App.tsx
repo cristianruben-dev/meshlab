@@ -230,7 +230,6 @@ export default function App() {
       name: data.name,
       description: data.description,
       folderId: data.folderId,
-      tagIds: data.tagIds,
       preferredView: data.preferredView,
       ...(data.boardSettings ? { boardSettings: data.boardSettings } : {}),
       circuit: data.circuit ?? blankCircuit(),
@@ -247,7 +246,6 @@ export default function App() {
       name: t('Untitled Project'),
       description: '',
       folderId: null,
-      tagIds: [],
       preferredView: view,
       ...(view === 'board' ? { boardSettings: boardSettingsForSize('half') } : {}),
       circuit: view === 'board'
@@ -263,7 +261,6 @@ export default function App() {
       name: t(templateName),
       description: '',
       folderId,
-      tagIds: [],
       preferredView: 'schematic',
       circuit: structuredClone(circuit),
     })
@@ -277,7 +274,6 @@ export default function App() {
       name: data.name,
       description: data.description,
       folderId: data.folderId,
-      tagIds: data.tagIds,
     })
     await refreshFromRepo(repo)
   }, [flushPendingSaves, refreshFromRepo])
@@ -343,30 +339,6 @@ export default function App() {
     setHubNotice({ text: 'Folder deleted.' })
   }, [flushPendingSaves, refreshFromRepo])
 
-  const handleCreateTag = useCallback(async (name: string, color: string): Promise<Tag> => {
-    const repo = repoRef.current
-    if (!repo) throw new Error('Storage is not ready.')
-    const created = await repo.createTag({ name, color })
-    await refreshFromRepo(repo)
-    return created
-  }, [refreshFromRepo])
-
-  const handleUpdateTag = useCallback(async (id: string, changes: { name?: string; color?: string }) => {
-    const repo = repoRef.current
-    if (!repo) return
-    await repo.updateTag(id, changes)
-    await refreshFromRepo(repo)
-  }, [refreshFromRepo])
-
-  const handleDeleteTag = useCallback(async (tag: Tag) => {
-    const repo = repoRef.current
-    if (!repo) return
-    await flushPendingSaves()
-    await repo.deleteTag(tag.id)
-    await refreshFromRepo(repo)
-    setHubNotice({ text: 'Tag deleted.' })
-  }, [flushPendingSaves, refreshFromRepo])
-
   const handleExportProject = useCallback((project: Project) => {
     void flushPendingSaves()
     downloadProjectFile(project, folders, tags)
@@ -419,7 +391,6 @@ export default function App() {
           project={activeProject}
           projects={projects}
           folders={folders}
-          tags={tags}
           openProjectIds={openProjectIds}
           saveState={saveState}
           storageMode={storageMode}
@@ -445,10 +416,8 @@ export default function App() {
           mode={editorModal?.mode ?? 'create'}
           initialProject={editorModal?.mode === 'edit' ? editorModal.project : undefined}
           folders={folders}
-          tags={tags}
           palette={palette}
           t={t}
-          onCreateTag={handleCreateTag}
           onSubmit={async data => {
             const current = editorModal
             setEditorModal(null)
@@ -468,7 +437,6 @@ export default function App() {
     <ProjectsHub
       projects={projects}
       folders={folders}
-      tags={tags}
       openProjectIds={openProjectIds}
       storageMode={storageMode}
       language={language}
@@ -494,9 +462,6 @@ export default function App() {
       onCreateFolder={handleCreateFolder}
       onUpdateFolder={handleUpdateFolder}
       onDeleteFolder={handleDeleteFolder}
-      onCreateTag={handleCreateTag}
-      onUpdateTag={handleUpdateTag}
-      onDeleteTag={handleDeleteTag}
       onQuickTemplate={handleQuickTemplate}
     />
   )

@@ -61,7 +61,7 @@ import { Symbol } from '../editor/Symbol'
 import { diagnostic, type Language, type Translate } from '../locale'
 import { exportJson, exportPng } from '../editor/io'
 import { parseImportJson } from '../storage/io'
-import { blankCircuit, type Folder, type PreferredView, type Project, type Tag } from '../storage/types'
+import { blankCircuit, type Folder, type PreferredView, type Project } from '../storage/types'
 import type { Theme, ThemePreference } from '../theme'
 import { palettes } from '../palette'
 import { LanguageSelect, ThemeSwitch } from './ChromeControls'
@@ -101,7 +101,6 @@ export type WorkbenchProps = {
   project: Project
   projects: Project[]
   folders: Folder[]
-  tags: Tag[]
   openProjectIds: string[]
   saveState: SaveState
   storageMode: 'indexeddb' | 'memory'
@@ -127,7 +126,6 @@ export function Workbench({
   project,
   projects,
   folders,
-  tags,
   openProjectIds,
   saveState,
   storageMode,
@@ -476,7 +474,6 @@ export function Workbench({
         activeProject={project}
         projects={projects}
         folders={folders}
-        tags={tags}
         openProjectIds={openProjectIds}
         saveState={saveState}
         t={t}

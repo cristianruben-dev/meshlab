@@ -17,14 +17,13 @@ import { Input } from '@/components/ui/input'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import type { Language, Translate } from '../locale'
 import type { Palette } from '../palette'
-import type { Folder, Project, Tag } from '../storage/types'
+import type { Folder, Project } from '../storage/types'
 import { CircuitPreview } from './CircuitPreview'
 import { formatRelativeTime } from './filters'
 
 type ProjectCardProps = {
   project: Project
   folder?: Folder
-  tags: Tag[]
   layout: 'grid' | 'list'
   isOpenInTab: boolean
   palette: Palette
@@ -42,7 +41,6 @@ type ProjectCardProps = {
 export function ProjectCard({
   project,
   folder,
-  tags,
   layout,
   isOpenInTab,
   palette,
@@ -194,18 +192,13 @@ export function ProjectCard({
             {isOpenInTab && <span className="open-tab-dot" title={t('Open in tab')}>{t('Open in tab')}</span>}
           </div>
           {project.description && <p className="project-desc project-desc-single">{project.description}</p>}
-          <div className="project-badges">
-            {folder && (
+          {folder && (
+            <div className="project-badges">
               <span className="folder-chip" style={{ '--folder-color': folder.color } as React.CSSProperties}>
                 <FolderIcon size={11} /> {folder.name}
               </span>
-            )}
-            {tags.map(tag => (
-              <span key={tag.id} className="tag-chip" style={{ '--tag-color': tag.color } as React.CSSProperties}>
-                <span className="tag-dot" aria-hidden="true" /> {tag.name}
-              </span>
-            ))}
-          </div>
+            </div>
+          )}
         </div>
         <div className="project-row-meta">
           <span className="view-chip">
@@ -247,18 +240,11 @@ export function ProjectCard({
 
         {project.description && <p className="project-desc">{project.description}</p>}
 
-        {(folder || tags.length > 0) && (
+        {folder && (
           <div className="project-badges">
-            {folder && (
-              <span className="folder-chip" style={{ '--folder-color': folder.color } as React.CSSProperties}>
-                <FolderIcon size={11} /> {folder.name}
-              </span>
-            )}
-            {tags.map(tag => (
-              <span key={tag.id} className="tag-chip" style={{ '--tag-color': tag.color } as React.CSSProperties}>
-                <span className="tag-dot" aria-hidden="true" /> {tag.name}
-              </span>
-            ))}
+            <span className="folder-chip" style={{ '--folder-color': folder.color } as React.CSSProperties}>
+              <FolderIcon size={11} /> {folder.name}
+            </span>
           </div>
         )}
 

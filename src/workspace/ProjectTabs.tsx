@@ -17,7 +17,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import type { Translate } from '../locale'
-import type { Folder, PreferredView, Project, Tag } from '../storage/types'
+import type { Folder, PreferredView, Project } from '../storage/types'
 
 export type SaveState = 'saved' | 'saving' | 'error' | 'memory'
 
@@ -25,7 +25,6 @@ type ProjectTabsProps = {
   activeProject: Project
   projects: Project[]
   folders: Folder[]
-  tags: Tag[]
   openProjectIds: string[]
   saveState: SaveState
   t: Translate
@@ -43,7 +42,6 @@ export function ProjectTabs({
   activeProject,
   projects,
   folders,
-  tags,
   openProjectIds,
   saveState,
   t,
@@ -62,14 +60,10 @@ export function ProjectTabs({
 
   const projectById = new Map(projects.map(project => [project.id, project]))
   const folderById = new Map(folders.map(folder => [folder.id, folder]))
-  const tagById = new Map(tags.map(tag => [tag.id, tag]))
   const openProjects = openProjectIds
     .map(id => projectById.get(id))
     .filter((project): project is Project => Boolean(project))
   const otherProjects = projects.filter(project => !openProjectIds.includes(project.id))
-  const activeTags = activeProject.tagIds
-    .map(id => tagById.get(id))
-    .filter((tag): tag is Tag => Boolean(tag))
 
   async function commitRename() {
     const trimmed = draftName.trim()
@@ -250,12 +244,6 @@ export function ProjectTabs({
       </div>
 
       <div className="project-tabs-meta">
-        {activeTags.slice(0, 2).map(tag => (
-          <span key={tag.id} className="tab-tag-chip" style={{ '--tag-color': tag.color } as React.CSSProperties}>
-            <span className="tag-dot" aria-hidden="true" />
-            <span>{tag.name}</span>
-          </span>
-        ))}
         <Button
           variant="ghost"
           size="icon-xs"

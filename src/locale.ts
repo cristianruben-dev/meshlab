@@ -371,6 +371,19 @@ const spanish: Record<string, string> = {
   "New blank circuit": "Nuevo circuito en blanco",
   "New blank breadboard": "Nueva protoboard en blanco",
   "jumpers": "puentes",
+  "Search projects or descriptions…": "Buscar proyectos o descripciones…",
+  "Try adjusting your search query or selected folder.": "Prueba ajustar la búsqueda o la carpeta seleccionada.",
+  "Project setup steps": "Pasos de creación del proyecto",
+  "Type": "Tipo",
+  "Size": "Tamaño",
+  "Start": "Inicio",
+  "Details": "Detalles",
+  "Next": "Siguiente",
+  "Back": "Anterior",
+  "Choose what you want to build": "Elige qué quieres construir",
+  "Choose the physical size of your breadboard": "Elige el tamaño físico de tu protoboard",
+  "Start from scratch or use a template": "Empieza desde cero o usa una plantilla",
+  "Name and organize your project": "Nombra y organiza tu proyecto",
 }
 
 export function readLanguage(): Language {

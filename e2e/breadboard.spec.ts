@@ -44,16 +44,24 @@ async function createBreadboardProject(
 
   await page.getByRole('button', { name: isEs ? 'Nuevo proyecto' : 'New project', exact: true }).click()
   const dialog = page.getByRole('dialog', { name: isEs ? 'Nuevo proyecto' : 'New project' })
+  const nextLabel = isEs ? 'Siguiente' : 'Next'
+  // Step 1: Project type -> Breadboard
   await dialog.getByRole('radio', { name: isEs ? /Protoboard/ : /Breadboard/ }).click()
+  await dialog.getByRole('button', { name: nextLabel }).click()
+  // Step 2: Breadboard size
   await dialog.getByRole('radio', { name: sizeRadioNames[language][size] }).click()
   if (size === 'full' && splitRails) {
     await dialog.getByRole('switch').click()
   }
-  await dialog.getByRole('textbox', { name: isEs ? 'Nombre del proyecto' : 'Project name' }).fill(name)
+  await dialog.getByRole('button', { name: nextLabel }).click()
+  // Step 3: Starting point
   if (template) {
     await dialog.getByRole('radio', { name: isEs ? /Desde plantilla/ : /From template/ }).click()
     await dialog.getByRole('button', { name: isEs ? (templateEs[template] ?? template) : template }).click()
   }
+  await dialog.getByRole('button', { name: nextLabel }).click()
+  // Step 4: Details
+  await dialog.getByRole('textbox', { name: isEs ? 'Nombre del proyecto' : 'Project name' }).fill(name)
   await dialog.getByRole('button', { name: isEs ? 'Crear proyecto' : 'Create project' }).click()
 }
 
