@@ -248,7 +248,7 @@ test('follows the system color scheme until a theme is chosen, then keeps the ch
 test('keeps phone chrome on one row and moves file and theme controls into the More menu', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
   const topbar = page.locator('.topbar')
-  await expect.poll(async () => (await topbar.boundingBox())!.height).toBe(52)
+  await expect.poll(async () => (await topbar.boundingBox())!.height).toBe(48)
   const toolbar = page.getByRole('group', { name: 'SCHEMATIC TOOLS' })
   expect(await toolbar.evaluate(element => element.scrollWidth - element.clientWidth)).toBe(0)
   await expect(page.getByRole('combobox', { name: 'Circuit examples' })).toHaveCount(0)
