@@ -205,8 +205,9 @@ button:not(:disabled) { cursor: pointer; }
 .mode-select .part { cursor: move; }
 .mode-wire, .pin, .mode-wire .wire { cursor: crosshair; }
 .wire { cursor: pointer; }
-.flow { animation: flow linear infinite; pointer-events: none; }
-@keyframes flow { to { stroke-dashoffset: -26; } }
+/* Flow dots advance in JS (editor/flow.ts) from each wire's data-speed, so speed changes never restart them. */
+.flow { pointer-events: none; }
+.setting-hint { display: block; color: var(--muted-foreground); font-size: 12px; line-height: 16px; }
 .canvas-empty { position: absolute; inset: 0; display: grid; gap: 6px; align-content: center; justify-items: center; pointer-events: none; color: var(--muted-foreground); font-size: 13px; text-align: center; padding-inline: 16px; }
 .canvas-empty strong { color: var(--foreground); font-size: 17px; font-weight: 650; letter-spacing: -.015em; }
 .canvas-empty-icon { display: grid; place-items: center; width: 52px; height: 52px; margin-bottom: 6px; border-radius: var(--radius-surface); color: var(--brand); background: var(--brand-soft); border: 1px solid var(--brand-border); }

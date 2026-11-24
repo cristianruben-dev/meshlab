@@ -211,6 +211,7 @@ const spanish: Record<string, string> = {
   "Jumper selected": "Cable puente seleccionado",
   "Change jumper color or remove it from the board.": "Cambia el color del cable puente o elimínalo de la placa.",
   // Workspace shell strings (unit B adds below this line).
+  "Dot speed follows the current in each wire.": "La velocidad de los puntos sigue la corriente de cada cable.",
   "Library": "Biblioteca",
   "Inspector": "Inspector",
   "Breadboard settings": "Ajustes de la protoboard",

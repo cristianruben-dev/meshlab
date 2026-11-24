@@ -4,6 +4,7 @@ import { metric, catalog } from './catalog'
 import type { Translate } from '../locale'
 import { Symbol } from './Symbol'
 import type { Palette } from '../palette'
+import { flowSpeed, useFlowAnimation } from './flow'
 
 type Measurement = { voltage: number; current: number; power: number }
 export type View = { x: number; y: number; scale: number }
@@ -84,6 +85,7 @@ const endpointKey = (endpoint: Endpoint) => 'component' in endpoint ? `${endpoin
 export default function Canvas(props: CanvasProps) {
   const { t, palette: c, svg, circuit, view, wireFrom, cursor, readings, pins, nodes, showVoltage, showNodes } = props
   const frame = frameFor(useSize(svg), props.inset)
+  useFlowAnimation(svg, props.running)
   const draft = wireFrom && cursor ? (() => {
     const start = endpointPosition(circuit, wireFrom)
     return pathFor([start, { x: cursor.x, y: start.y }, cursor])
@@ -108,14 +110,13 @@ export default function Canvas(props: CanvasProps) {
         const amps = props.flows[wire.id]
         const voltage = volts(wire.from) ?? volts(wire.to)
         const selected = props.selected.includes(wire.id)
-        const delay = (amps ?? 0) * (props.reverse ? -1 : 1) < 0 ? 'reverse' : 'normal'
-        const rate = (22 + Math.min(175, Math.log10(1 + Math.abs(amps ?? 0) * 1000) * 34)) * props.speed
+        const velocity = flowSpeed(amps, props.speed, props.reverse)
         return <g key={wire.id} className="wire">
           <title>{`${t('Node')}: ${metric(voltage, 'V')} · I: ${metric(amps, 'A')} · ΔV: 0 V · P: 0 W`}</title>
           <path d={path} fill="none" stroke={selected ? c.selected : c.wireCasing} strokeWidth={selected ? 8 : 6} strokeOpacity={selected ? .35 : 1} strokeLinejoin="round" />
           <path d={path} fill="none" stroke={(showVoltage && voltageColor(voltage)) || c.wire} strokeWidth="2" strokeLinejoin="round" />
           {!!amps && Math.abs(amps) > 1e-12 && <path d={path} fill="none" stroke={c.current} strokeWidth="3.2" strokeLinecap="round"
-            strokeDasharray="1 25" className="flow" style={{ animationDuration: `${26 / rate}s`, animationDirection: delay, animationPlayState: props.running ? 'running' : 'paused' }} />}
+            strokeDasharray="1 25" className="flow" data-speed={velocity.toFixed(2)} />}
           <path data-export="hide" d={path} fill="none" stroke="transparent" strokeWidth="14" onPointerDown={event => props.onWire(event, wire)} />
         </g>
       })}

@@ -365,7 +365,8 @@ export function Workbench({
         <Setting label={t('Ground returns')} checked={showGround} onChange={setShowGround} />
         <Setting label={t('Electron flow')} checked={reverse} onChange={setReverse} />
         <div className="speed"><div><label htmlFor="flow-speed">{t('Animation speed')}</label><span>{speed.toLocaleString(language, { minimumFractionDigits: 1, maximumFractionDigits: 1 })}×</span></div>
-          <Slider id="flow-speed" value={[speed]} min={.2} max={3} step={.1} onValueChange={v => setSpeed(one(v))} /></div>
+          <Slider id="flow-speed" value={[speed]} min={.2} max={3} step={.1} onValueChange={v => setSpeed(one(v))} />
+          <small className="setting-hint">{t('Dot speed follows the current in each wire.')}</small></div>
       </section>
       <section className="panel-section key-guide"><h3 className="section-label">{t('Shortcuts')}</h3><span><kbd>R</kbd> {t('Rotate')}</span><span><kbd>{language === 'es' ? 'Supr' : 'Del'}</kbd> {t('Delete')}</span><span><kbd>{language === 'es' ? 'Espacio' : 'Space'}</kbd> {t('Play / pause')}</span><span><kbd>Esc</kbd> {t('Cancel')}</span></section>
     </div>,
