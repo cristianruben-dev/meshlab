@@ -91,9 +91,9 @@ button:not(:disabled) { cursor: pointer; }
  * (surfaces, controls, chips). Every floating or docked surface sits on this grid.
  */
 .workbench {
-  --gutter: 12px; --gap: 8px; --radius-surface: 16px; --radius-control: 10px; --radius-chip: 8px;
+  --gutter: 12px; --gap: 8px; --radius-surface: var(--aura-radius-card); --radius-control: var(--aura-radius-md); --radius-chip: var(--aura-radius-sm);
   --project-header-h: 0px; --bar-top: var(--gutter);
-  --bar-h: 52px; --tools-h: 40px; --launcher-w: 40px; --status-h: 32px;
+  --bar-h: 48px; --tools-h: 40px; --launcher-w: 40px; --status-h: 32px;
   --side-left: 288px; --side-right: 312px;
   /* Distance of in-stage chrome from each stage edge: the gutter at the viewport, the gap beside a docked card. */
   --edge-left: var(--gutter); --edge-right: var(--gutter); --edge-bottom: var(--gutter);
@@ -102,7 +102,9 @@ button:not(:disabled) { cursor: pointer; }
   /* Floating panels and sheets rest on this baseline; in the schematic the status line sits below it. */
   --baseline: var(--edge-bottom);
   position: fixed; inset: 0; display: grid; overflow: hidden;
-  grid-template-columns: auto minmax(0, 1fr) auto; grid-template-rows: minmax(0, 1fr) auto; background: var(--canvas); }
+  grid-template-columns: auto minmax(0, 1fr) auto; grid-template-rows: minmax(0, 1fr) auto; background: var(--canvas);
+  --radius-bar: calc(var(--radius-control) + 4px);
+}
 .workspace-mode-pill {
   display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px;
   border-radius: 999px; border: 1px solid var(--hairline); background: var(--surface-2);
@@ -127,7 +129,7 @@ button:not(:disabled) { cursor: pointer; }
 
 /* Floating top bar: 52 px tall with 10 px around its 32 px controls. */
 .topbar { position: absolute; z-index: 40; top: var(--bar-top); left: var(--gutter); right: var(--gutter); height: var(--bar-h);
-  display: flex; align-items: center; gap: 8px; padding: 0 10px; border-radius: var(--radius-surface); }
+  display: flex; align-items: center; gap: 8px; padding: 0 8px; border-radius: var(--radius-surface); }
 .topbar > * { flex: none; }
 .brand { display: flex; gap: 10px; align-items: center; white-space: nowrap; padding-right: 4px; }
 .brand-icon { width: 32px; height: 32px; display: grid; place-items: center; color: #fff; border-radius: var(--radius-control);
@@ -143,7 +145,7 @@ button:not(:disabled) { cursor: pointer; }
 .segmented button[aria-pressed="true"] { color: var(--foreground); background: var(--card); box-shadow: var(--shadow-pop); }
 .dark .segmented button[aria-pressed="true"] { background: #223042; }
 .segmented button[aria-pressed="true"] svg { color: var(--brand); }
-.state { gap: 7px; height: 24px; font: 600 10px var(--font-mono); letter-spacing: .1em; padding-inline: 10px; border-radius: 999px; }
+.state { gap: 6px; height: 24px; font: 600 10px var(--font-mono); letter-spacing: .1em; padding-inline: 10px; border-radius: 999px; }
 .state i, .status-hint i { display: inline-block; width: 7px; height: 7px; border-radius: 100%; background: currentColor; flex: none; }
 .state-live { color: var(--ok); background: var(--ok-soft); border-color: var(--ok-border); }
 .state-live i { animation: pulse 2s ease-out infinite; }
@@ -179,15 +181,15 @@ button:not(:disabled) { cursor: pointer; }
   display: grid; justify-items: center; gap: var(--gap); pointer-events: none; }
 .hud-top > * { pointer-events: auto; }
 .toolbar, .tool-group { display: flex; align-items: center; gap: 2px; }
-.toolbar { height: var(--tools-h); padding: 4px; border-radius: 12px; max-width: 100%; }
-.toolbar button, .tools-menu button { width: 32px; height: 32px; border-radius: var(--radius-chip); }
+.toolbar { height: var(--tools-h); padding: 4px; border-radius: var(--radius-bar); max-width: 100%; }
+.toolbar button, .tools-menu button { width: 32px; height: 32px; border-radius: var(--radius-control); }
 .tool-group { flex: none; }
 .tool-group + .tool-group { border-left: 1px solid var(--border); margin-left: 4px; padding-left: 4px; }
 .zoom-level { min-width: 44px; color: var(--muted-foreground); text-align: center; font-size: 11px; font-weight: 500; }
 .tool { color: var(--muted-foreground); }
 .tool:hover { color: var(--foreground); }
 .tool-active, .tool-active:hover { color: var(--brand); background: var(--brand-soft); box-shadow: inset 0 0 0 1px var(--brand-border); }
-.tools-menu { display: flex; align-items: center; padding: 4px; border-radius: 12px; box-shadow: var(--shadow-float); }
+.tools-menu { display: flex; align-items: center; padding: 4px; border-radius: var(--radius-bar); box-shadow: var(--shadow-float); }
 /* The full toolbar needs about 540 px; narrower stages move clipboard and zoom tools into the "More tools" overflow. */
 .stage { container: stage / inline-size; }
 .toolbar .tools-extra:not(.tool-group) { display: contents; }
@@ -219,8 +221,8 @@ button:not(:disabled) { cursor: pointer; }
 
 /* Launcher rail: top-left of the free editor area, level with the floating side panels. */
 .launcher-host { position: absolute; z-index: 30; left: var(--edge-left); top: var(--hud-space); }
-.launcher { display: flex; flex-direction: column; gap: 4px; padding: 4px; border-radius: 12px; }
-.launcher button { width: 32px; height: 32px; border-radius: var(--radius-chip); }
+.launcher { display: flex; flex-direction: column; gap: 4px; padding: 4px; border-radius: var(--radius-bar); }
+.launcher button { width: 32px; height: 32px; border-radius: var(--radius-control); }
 
 /* Panels: floating drawers and sheets overlay the editor with elevation; pinned panels are docked cards. */
 .float { position: absolute; z-index: 20; display: flex; flex-direction: column; gap: var(--gap); pointer-events: none; }
@@ -236,7 +238,9 @@ button:not(:disabled) { cursor: pointer; }
 .float-bottom > .panel { flex: 1 1 0; max-width: 600px; min-height: 0; }
 .panel { display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; background: var(--card); color: var(--card-foreground);
   border-radius: var(--radius-surface); box-shadow: var(--shadow-float); }
-.float > .panel { animation: panel-in .18s cubic-bezier(.2, .8, .2, 1); }
+.float > .panel { animation: panel-in .18s cubic-bezier(.2, .8, .2, 1);
+  --card: var(--popover);
+}
 .float-left > .panel { --enter: translateX(-8px); }
 .float-right > .panel { --enter: translateX(8px); }
 @keyframes panel-in { from { opacity: 0; transform: var(--enter, translateY(8px)); } }
@@ -265,7 +269,7 @@ button:not(:disabled) { cursor: pointer; }
 .panel-section { display: grid; gap: 4px; }
 .panel-section + .panel-section { border-top: 1px solid var(--hairline); padding-top: 12px; }
 .panel-section > .section-label { margin-bottom: 4px; }
-.empty-state { display: grid; justify-items: center; text-align: center; gap: 4px; padding: 20px 16px; border: 1px dashed var(--border); border-radius: 12px; background: var(--surface-2); font-size: 13px; }
+.empty-state { display: grid; justify-items: center; text-align: center; gap: 4px; padding: 20px 16px; border: 1px dashed var(--border); border-radius: var(--radius-bar); background: var(--surface-2); font-size: 13px; }
 .empty-state strong { font-weight: 600; }
 .empty-state small { color: var(--muted-foreground); font-size: 12px; line-height: 1.45; }
 .empty-state-icon { display: grid; place-items: center; width: 32px; height: 32px; margin-bottom: 4px; border-radius: var(--radius-control); color: var(--brand); background: var(--brand-soft); }
@@ -278,7 +282,7 @@ button:not(:disabled) { cursor: pointer; }
 .library-content { padding: 8px 8px 16px; }
 .library-content section + section { margin-top: 12px; }
 .library-content .section-label { padding: 8px 8px 0; margin-bottom: 4px; }
-.library-part { height: 36px; display: flex; justify-content: start; gap: 10px; width: 100%; padding: 0 7px; font-size: 13px; font-weight: 500; border-radius: var(--radius-control); }
+.library-part { height: 36px; display: flex; justify-content: start; gap: 10px; width: 100%; padding: 0 8px; font-size: 13px; font-weight: 500; border-radius: var(--radius-control); }
 .library-part:hover { background: var(--surface-3); }
 .part-icon { display: grid; place-items: center; width: 32px; height: 24px; color: var(--brand); background: var(--brand-soft); border: 1px solid color-mix(in oklab, var(--brand-border) 60%, transparent); border-radius: var(--radius-chip); flex: none; }
 .part-icon svg { width: 26px; height: 18px; }
@@ -288,7 +292,7 @@ button:not(:disabled) { cursor: pointer; }
 
 /* Notices: floating callouts under the toolbar */
 .notice { display: grid; gap: 6px; width: min(560px, calc(100vw - 2 * var(--gutter))); border: 1px solid var(--ok-border); color: var(--ok); background: color-mix(in oklab, var(--ok-soft) 92%, transparent);
-  padding: 10px 14px; border-radius: 12px; font-size: 13px; line-height: 1.45; box-shadow: var(--shadow-float); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+  padding: 10px 14px; border-radius: var(--radius-bar); font-size: 13px; line-height: 1.45; box-shadow: var(--shadow-float); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
   animation: panel-in .18s ease-out; pointer-events: none; }
 .notice.warning { border-color: var(--warn-border); background: color-mix(in oklab, var(--warn-soft) 94%, transparent); color: var(--warn); }
 .notice strong { font-weight: 650; }
@@ -328,9 +332,9 @@ button:not(:disabled) { cursor: pointer; }
 .form-error { color: var(--danger); font-size: 12px; }
 .reading { display: flex; align-items: center; justify-content: space-between; gap: 8px; color: var(--muted-foreground); font-size: 12px; }
 .reading strong { color: var(--value); font-size: 12px; font-weight: 600; }
-.measurements { display: grid; gap: 8px; background: var(--surface-2); border: 1px solid var(--hairline); padding: 12px; border-radius: 12px; }
+.measurements { display: grid; gap: 8px; background: var(--surface-2); border: 1px solid var(--hairline); padding: 12px; border-radius: var(--radius-bar); }
 .ratings { display: grid; gap: 8px; font-size: 12px; }
-.ratings summary { cursor: pointer; color: var(--label); font-weight: 600; min-height: 28px; display: flex; align-items: center; border-radius: 6px; }
+.ratings summary { cursor: pointer; color: var(--label); font-weight: 600; min-height: 28px; display: flex; align-items: center; border-radius: var(--radius-chip); }
 .ratings summary::before { content: ""; width: 6px; height: 6px; margin: 0 10px 0 2px; border: solid currentColor; border-width: 0 1.5px 1.5px 0; transform: rotate(-45deg); transition: transform .15s; }
 .ratings[open] summary::before { transform: rotate(45deg); }
 .ratings summary::-webkit-details-marker { display: none; }
@@ -417,3 +421,56 @@ kbd { display: inline-block; min-width: 20px; text-align: center; color: var(--k
 .workbench[data-tier="phone"] .state { display: inline-flex; position: absolute; left: 34px; top: 4px; width: 12px; height: 12px; padding: 0; gap: 0;
   border: 2px solid var(--card); border-radius: 999px; font-size: 0; overflow: hidden; }
 .workbench[data-tier="phone"] .state i { width: 8px; height: 8px; }
+
+:root, :root.dark {
+  --page-glow: color-mix(in oklab, var(--primary) 10%, var(--aura-color-bg-layout));
+  --page-glow-2: color-mix(in oklab, var(--aura-chart-2) 8%, var(--aura-color-bg-layout));
+  --topbar-bg: color-mix(in oklab, var(--card) 80%, transparent);
+  --surface-2: var(--aura-color-bg-layout);
+  --surface-3: var(--aura-color-fill-secondary);
+  --hairline: var(--aura-color-border-secondary);
+  --brand: var(--primary);
+  --brand-strong: color-mix(in oklab, var(--primary) 80%, var(--foreground));
+  --brand-soft: color-mix(in oklab, var(--primary) 10%, var(--card));
+  --brand-border: color-mix(in oklab, var(--primary) 32%, var(--card));
+  --value: var(--primary);
+  --label: var(--muted-foreground);
+  --warn: var(--warning-700);
+  --warn-soft: var(--warning-50);
+  --warn-border: var(--warning-200);
+  --danger: var(--destructive-700);
+  --ok: var(--success-700);
+  --ok-soft: var(--success-50);
+  --ok-border: var(--success-200);
+  --kbd-bg: var(--card);
+  --kbd-fg: var(--foreground);
+  --kbd-border: var(--field-border);
+  --row-hover: var(--aura-color-fill-secondary);
+  --canvas: var(--aura-color-bg-layout);
+  --stage: var(--aura-color-bg-layout);
+  --stage-dot: var(--aura-color-border);
+  --chrome: color-mix(in oklab, var(--card) 84%, transparent);
+  --chrome-border: var(--border);
+  --dock: var(--card);
+  --radius-chip: var(--aura-radius-sm);
+  --radius-control: var(--aura-radius-md);
+  --radius-bar: calc(var(--radius-control) + 4px);
+  --radius-surface: var(--aura-radius-card);
+  --surface-ring: color-mix(in oklab, var(--foreground) 9%, transparent);
+  --surface-ring-strong: color-mix(in oklab, var(--foreground) 13%, transparent);
+  --shadow-dock: 0 0 0 1px var(--surface-ring), var(--aura-shadow-card);
+  --shadow-panel: var(--shadow-dock);
+  --shadow-bar: 0 0 0 1px var(--surface-ring), var(--aura-shadow-raised);
+  --shadow-float: 0 0 0 1px var(--surface-ring-strong), var(--aura-shadow-overlay);
+  --shadow-pop: 0 0 0 1px var(--surface-ring), var(--aura-shadow-control);
+  --scroll-shade: color-mix(in oklab, var(--foreground) 12%, transparent);
+}
+
+.dark .brand-icon {
+  color: var(--primary-foreground);
+  background: linear-gradient(145deg, color-mix(in oklab, var(--brand) 70%, white), var(--brand) 55%, var(--brand-strong));
+}
+
+.dark .segmented button[aria-pressed="true"] {
+  background: var(--aura-color-bg-elevated);
+}

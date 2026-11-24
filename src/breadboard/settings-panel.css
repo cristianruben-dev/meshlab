@@ -4,7 +4,7 @@
 .board-settings-sizes legend { margin: 0 0 8px; padding: 0; color: var(--muted-foreground); font: 600 11px/16px var(--font-sans); text-transform: uppercase; letter-spacing: .08em; }
 .board-settings-sizes > div { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
 .board-settings-size b { display: block; color: var(--value); font: 600 12px/16px var(--font-mono); font-variant-numeric: tabular-nums; }
-.board-settings-size { position: relative; display: grid; gap: 2px; padding: 10px 12px; border-radius: 10px; cursor: pointer;
+.board-settings-size { position: relative; display: grid; gap: 2px; padding: 10px 12px; border-radius: var(--radius-bar); cursor: pointer;
   border: 1px solid var(--border); background: var(--surface-2); transition: border-color .12s, background-color .12s, box-shadow .12s; }
 .board-settings-size:hover { border-color: color-mix(in oklab, var(--brand) 45%, var(--border)); }
 .board-settings-size input { position: absolute; opacity: 0; inset: 0; margin: 0; cursor: pointer; }

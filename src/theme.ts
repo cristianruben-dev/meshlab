@@ -5,7 +5,7 @@ export type Theme = 'light' | 'dark'
 
 export const themeKey = 'meshlab:theme'
 const query = '(prefers-color-scheme: dark)'
-const chrome: Record<Theme, string> = { light: '#f5f7fa', dark: '#0a0f17' }
+const chrome: Record<Theme, string> = { light: '#f5f5f5', dark: '#0a0a0f' }
 
 export function readThemePreference(): ThemePreference {
   try {

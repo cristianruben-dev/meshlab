@@ -7,7 +7,7 @@
 
 .resistor-head-text {
   display: grid;
-  gap: 1px;
+  gap: 2px;
 }
 
 .resistor-head-text small {
@@ -30,9 +30,9 @@
 
 .resistor-segmented {
   display: inline-flex;
-  padding: 3px;
+  padding: 2px;
   gap: 2px;
-  border-radius: 10px;
+  border-radius: var(--radius-control);
   background: var(--surface-2);
   border: 1px solid var(--hairline);
 }
@@ -43,8 +43,8 @@
   color: var(--muted-foreground);
   font-size: 12px;
   font-weight: 550;
-  padding: 5px 11px;
-  border-radius: 7px;
+  padding: 6px 12px;
+  border-radius: var(--radius-chip);
   cursor: pointer;
   transition: background-color .14s, color .14s, box-shadow .14s;
   white-space: nowrap;
@@ -57,7 +57,7 @@
 .resistor-seg-active {
   background: var(--card);
   color: var(--foreground);
-  box-shadow: 0 1px 2px rgb(0 0 0 / .12);
+  box-shadow: var(--shadow-pop);
 }
 
 /* Interactive SVG stage */
@@ -66,8 +66,8 @@
   flex-direction: column;
   align-items: center;
   gap: 6px;
-  padding: 14px 12px 10px;
-  border-radius: 14px;
+  padding: 11px;
+  border-radius: var(--radius-bar);
   background: var(--surface-2);
   border: 1px solid var(--hairline);
 }
@@ -116,7 +116,7 @@
   font-family: var(--font-mono);
   font-size: 11px;
   padding: 1px 6px;
-  border-radius: 5px;
+  border-radius: calc(var(--radius-chip) - 2px);
   background: var(--card);
   border: 1px solid var(--hairline);
   color: var(--foreground);
@@ -127,8 +127,8 @@
 .resistor-value-box {
   display: grid;
   gap: 10px;
-  padding: 12px;
-  border-radius: 12px;
+  padding: 11px;
+  border-radius: var(--radius-bar);
   background: var(--surface-2);
   border: 1px solid var(--hairline);
 }
@@ -142,7 +142,7 @@
 
 .resistor-value-field {
   display: grid;
-  gap: 5px;
+  gap: 4px;
   font-size: 12px;
   font-weight: 550;
   color: var(--label);
@@ -156,7 +156,7 @@
 
 .resistor-tol-quick {
   display: grid;
-  gap: 5px;
+  gap: 4px;
 }
 
 .resistor-mini-field-label {
@@ -168,7 +168,7 @@
 .resistor-tol-pills {
   display: flex;
   flex-wrap: wrap;
-  gap: 5px;
+  gap: 4px;
 }
 
 .resistor-round-note {
@@ -177,8 +177,8 @@
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  padding: 7px 10px;
-  border-radius: 8px;
+  padding: 7px 11px;
+  border-radius: var(--radius-control);
   background: var(--brand-soft);
   border: 1px solid var(--brand-border);
   font-size: 12px;
@@ -203,7 +203,7 @@
   background: var(--card);
   color: var(--foreground);
   font: 550 11.5px var(--font-mono);
-  padding: 3px 8px;
+  padding: 3px 7px;
   border-radius: 999px;
   cursor: pointer;
   transition: border-color .14s, background-color .14s, color .14s;
@@ -229,9 +229,9 @@
 .resistor-metric {
   display: flex;
   flex-direction: column;
-  gap: 3px;
-  padding: 10px 12px;
-  border-radius: 12px;
+  gap: 4px;
+  padding: 11px;
+  border-radius: var(--radius-bar);
   background: var(--surface-2);
   border: 1px solid var(--hairline);
   min-width: 0;
@@ -280,7 +280,7 @@
   gap: 4px;
   width: fit-content;
   margin-top: 2px;
-  padding: 2px 7px;
+  padding: 2px 8px;
   border-radius: 999px;
   font-size: 11px;
   font-weight: 600;
@@ -300,8 +300,8 @@
   justify-content: space-between;
   gap: 6px;
   width: 100%;
-  padding: 4px 7px;
-  border-radius: 7px;
+  padding: 3px 7px;
+  border-radius: var(--radius-chip);
   border: 1px solid var(--hairline);
   background: var(--card);
   color: var(--foreground);
@@ -340,8 +340,8 @@
   display: flex;
   flex-direction: column;
   gap: 6px;
-  padding: 8px 10px;
-  border-radius: 10px;
+  padding: 7px 11px;
+  border-radius: var(--radius-control);
   border: 1px solid var(--hairline);
   background: var(--card);
   color: var(--foreground);
@@ -404,8 +404,8 @@
 .resistor-swatches-panel {
   display: grid;
   gap: 8px;
-  padding: 10px 12px;
-  border-radius: 12px;
+  padding: 11px;
+  border-radius: var(--radius-bar);
   background: var(--surface-2);
   border: 1px solid var(--hairline);
 }
@@ -434,8 +434,8 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 5px 8px;
-  border-radius: 8px;
+  padding: 5px 7px;
+  border-radius: var(--radius-control);
   border: 1px solid var(--hairline);
   background: var(--card);
   color: var(--foreground);
@@ -466,10 +466,10 @@
 
 /* Collapsible IEC 60062 Reference Table */
 .resistor-ref-details {
-  border-radius: 10px;
+  border-radius: var(--radius-control);
   border: 1px solid var(--hairline);
   background: var(--surface-2);
-  padding: 6px 12px;
+  padding: 7px 11px;
   font-size: 12px;
 }
 
@@ -491,7 +491,7 @@
   content: "";
   width: 6px;
   height: 6px;
-  margin: 0 9px 0 2px;
+  margin: 0 8px 0 2px;
   border: solid currentColor;
   border-width: 0 1.5px 1.5px 0;
   transform: rotate(-45deg);
@@ -563,8 +563,8 @@
   display: grid;
   gap: 6px;
   width: 100%;
-  padding: 8px 10px;
-  border-radius: 10px;
+  padding: 7px 11px;
+  border-radius: var(--radius-control);
   border: 1px solid var(--hairline);
   background: var(--surface-2);
   color: var(--foreground);
@@ -588,7 +588,7 @@
 .resistor-mini-label {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: 4px;
   font-size: 11.5px;
   font-weight: 600;
   color: var(--label);

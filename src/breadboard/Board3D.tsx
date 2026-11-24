@@ -87,7 +87,7 @@ function paintSurface(ctx: CanvasRenderingContext2D, c: BoardPalette, p: Scene) 
       }
   }
   if (p.labels) {
-    ctx.fillStyle = c.index; ctx.font = '600 10px "Geist Mono Variable", ui-monospace, monospace'; ctx.textAlign = 'center'
+    ctx.fillStyle = c.index; ctx.font = '600 10px "Geist Mono", ui-monospace, monospace'; ctx.textAlign = 'center'
     for (const row of g.rows) {
       const text = row.length === 2 ? (row.endsWith('+') ? '+' : '−') : row
       ctx.fillText(text, 30, rowY[row] + 3.5); ctx.fillText(text, W - 30, rowY[row] + 3.5)
