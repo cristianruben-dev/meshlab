@@ -1143,8 +1143,9 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 0 8px;
-  border-radius: 13px;
+  /* 28 px controls 4 px from the edge: their 8 px corners nest in the 12 px bar. */
+  padding: 0 4px;
+  border-radius: var(--radius-bar, 12px);
   background: var(--chrome);
   box-shadow: var(--shadow-bar);
   backdrop-filter: saturate(1.6) blur(16px);

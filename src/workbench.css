@@ -112,7 +112,7 @@ button:not(:disabled) { cursor: pointer; }
 }
 .workspace-mode-pill svg { color: var(--brand); flex: none; }
 
-.workbench[data-project-header] { --project-header-h: 32px; --bar-top: calc(var(--gutter) + var(--project-header-h) + 6px); }
+.workbench[data-project-header] { --project-header-h: 36px; --bar-top: calc(var(--gutter) + var(--project-header-h) + var(--gap)); }
 .workbench[data-view="board"] { background: var(--stage); --hud-space: calc(var(--bar-space) + var(--tools-h) + var(--gap)); }
 .workbench[data-view="schematic"] { --hud-space: calc(var(--bar-space) + var(--tools-h) + var(--gap)); --baseline: calc(var(--edge-bottom) + var(--status-h) + var(--gap)); }
 .workbench[data-dock-left="true"] { --edge-left: var(--gap); }
